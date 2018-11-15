@@ -1,0 +1,33 @@
+#! /bin/bash
+
+cmd="$0"
+if [ -L "${cmd}" ]
+then
+    cmd="$(readlink $cmd)"
+fi
+projectdir="$(dirname $cmd)"
+targetdir="${projectdir}/target"
+classesdir="${targetdir}/classes"
+currentdir="${PWD}"
+
+#obtains classes/
+if [ ! -d "${classesdir}" ]
+then
+    cd "${projectdir}"
+    mvn compile
+    cd "${currentdir}"
+fi
+
+#obtains path to asm.jar
+asmpathfile="${targetdir}/mvn-exec-cp.txt"
+if [ ! -f "${asmpathfile}" ]
+then
+    cd "${projectdir}"
+    asmpath="$(mvn dependency:build-classpath -DincludeArtifactIds=asm | grep -v '^\[')"
+    cd "${currentdir}"
+    echo "${asmpath}" > ${asmpathfile}
+else
+    asmpath=$(cat ${asmpathfile})
+fi
+
+java ${MAVEN_EXEC_JAVA_OPTS} -cp "${classesdir}:${asmpath}" org.autogui.exec.MavenExecJava "$@"

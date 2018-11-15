@@ -1,14 +1,11 @@
 package org.autogui.exec;
 
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -23,11 +20,12 @@ public class MavenExecJava {
     }
 
     protected File projectPath = new File(".");
-    protected String mainClass;
+    protected String mainClass = null;
     protected List<String> arguments = new ArrayList<>();
+    protected List<Map.Entry<String,String>> propertySettings = new ArrayList<>();
     protected LinkedHashSet<ExecMode> modes = new LinkedHashSet<>();
     protected boolean compile;
-    protected boolean completeWorkingDirectory;
+    protected boolean completeWorkingDirectory = true;
 
     protected boolean debug = System.getProperty("autogui.lib.exec.debug", "false").equals("true");
 
@@ -70,25 +68,19 @@ public class MavenExecJava {
             log("%s", mode);
             switch (mode) {
                 case Execute: {
-                    String name = findMainClass(projectPath, mainClass);
-                    ProcessShell sh = getCommand(name, arguments);
-                    log("command %s", sh);
-                    sh.echo().runToReturnCode();
+                    executeExecute();
                     break;
                 }
                 case GetCommand: {
-                    String name = findMainClass(projectPath, mainClass);
-                    ProcessShell sh = getCommand(name, arguments);
-                    System.out.println(sh.getEchoString());
+                    executeGetCommand();
                     break;
                 }
                 case FindMainClass: {
-                    String name = findMainClass(projectPath, mainClass);
-                    System.out.println(name);
+                    executeFindMainClass();
                     break;
                 }
                 case ListMainClass: {
-                    listMainClasses(projectPath);
+                    executeListMainClass();
                     break;
                 }
                 case Help: {
@@ -99,6 +91,35 @@ public class MavenExecJava {
         }
         log("finish");
     }
+
+    public void executeExecute() {
+        if (mainClass != null) {
+            String name = findMainClass(projectPath, mainClass);
+            ProcessShell sh = getCommand(name, arguments);
+            log("command %s", sh);
+            sh.echo().runToReturnCode();
+        }
+    }
+
+    public void executeGetCommand() {
+        if (mainClass != null) {
+            String name = findMainClass(projectPath, mainClass);
+            ProcessShell sh = getCommand(name, arguments);
+            System.out.println(sh.getEchoString());
+        }
+    }
+
+    public void executeFindMainClass() {
+        if (mainClass != null) {
+            String name = findMainClass(projectPath, mainClass);
+            System.out.println(name);
+        }
+    }
+
+    public void executeListMainClass() {
+        listMainClasses(projectPath);
+    }
+
 
     public void parseArgs(String... args) {
         boolean argsPart = false;
@@ -121,6 +142,18 @@ public class MavenExecJava {
                     break;
                 } else if (arg.equals("-c") || arg.equals("--compile")) {
                     compile = true;
+                } else if (arg.equals("-sc") || arg.equals("--suppressComplete")) {
+                    completeWorkingDirectory = false;
+                } else if (arg.startsWith("-D") && arg.length() > "-D".length()) {
+                    String prop = arg.substring("-D".length());
+                    int n = prop.indexOf('=');
+                    if (n >= 0) {
+                        String name = prop.substring(0, n);
+                        String value = prop.substring(n + 1);
+                        propertySettings.add(new AbstractMap.SimpleEntry<>(name, value));
+                    } else {
+                        propertySettings.add(new AbstractMap.SimpleEntry<>(prop, ""));
+                    }
 
                 } else if (arg.equals("--")) {
                     argsPart = true;
@@ -140,11 +173,19 @@ public class MavenExecJava {
             }
         }
         if (modes.isEmpty()) {
-            modes.add(ExecMode.Execute);
+            if (mainClass == null) {
+                modes.add(ExecMode.Help);
+            } else {
+                modes.add(ExecMode.Execute);
+            }
         }
     }
 
     public void help() {
+        String ps = File.pathSeparator;
+        String sep = File.separator;
+
+
         String helpMessage = "" +
                 getClass().getName() + " [options] <mainClass> <arguments>...\n" +
                 "     <mainClass>   :  fully qualified name or sub-sequence of characters.\n" +
@@ -155,6 +196,18 @@ public class MavenExecJava {
                 "     -g | --get    :  show the command line\n" +
                 "     -e | --exec   :  execute the command line. automatically set if no -f,-l or -g.\n" +
                 "     -c | --compile:  mvn compile before execution.\n" +
+                "     -sc| --suppressComplete : suppress completion of relative path for arguments of following patterns.\n" +
+                "                  1. a relative path: <p>\n" +
+                "                  2. a path list: <p1>" + ps + "<p2>...\n" +
+                "                  3. a path list of value of property like arg: -...=<p1>" + ps + "<p1>...\n" +
+                "                 Default completion behavior recognize a path that \n" +
+                "                      starts with non-/ (Paths.get(p).isAbsolute()==false) \n" +
+                "                      and exists the first one component as a relative path.\n" +
+                "                      i.e. \"existing" + sep + "nonExisting\" will be completed as \"" + sep + "path" + sep + "to" + sep + "existing" + sep + "nonExisting\"\n" +
+                "               Note: \"mvn exec:java\" cannot change the working directory other than the target project dir.\n" +
+                "                   Thus, we need to provide the absolute path for an outer path of the project\n" +
+                "                    as arguments for the executed program. \n" +
+                "     -D<name>[=<value>]    :  set a system-property\n" +
                 "     --            :  indicate the start of mainClass and/or arguments\n";
         System.out.println(helpMessage);
     }
@@ -174,7 +227,7 @@ public class MavenExecJava {
     }
 
     public String findMainClass(File projectDir, String name) {
-        if (name.contains(".")) {
+        if (name != null && name.contains(".")) {
             return name;
         } else {
             for (File dir : getClassesDirectories(projectDir)) {
@@ -233,14 +286,7 @@ public class MavenExecJava {
 
     public String matchClass(Path classFile, String name) {
         try {
-            ClassReader r = new ClassReader(Files.newInputStream(classFile));
-
-            MainFinder finder = new MainFinder(name);
-            r.accept(finder, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-            if (finder.hasMain() && finder.isNameMatched()) {
-                return finder.getClassName();
-            }
-            return null;
+            return new MainFinder(name).matchClass(classFile);
         } catch (Exception ex) {
             System.err.println("matchClass: " + classFile + " : " + ex);
             ex.printStackTrace();
@@ -268,7 +314,22 @@ public class MavenExecJava {
         command.add("-Dexec.classpathScope=test");
         command.add("-Dexec.mainClass=" + mainClass);
         command.add("-Dexec.args=" + getCommandArgumentList(args));
+        propertySettings.stream()
+                .map(this::getPropertySetting)
+                .forEach(command::add);
         return command;
+    }
+
+    public String getPropertySetting(Map.Entry<String, String> prop) {
+        if (prop.getValue().isEmpty()) {
+            return "-D" + prop.getKey();
+        } else {
+            String value = prop.getValue();
+            if (completeWorkingDirectory) {
+                value = getCompletedPath(value);
+            }
+            return "-D" + prop.getKey() + "=" + value;
+        }
     }
 
     public String getMavenOpts() {
@@ -290,6 +351,9 @@ public class MavenExecJava {
 
 
     public String getCommandArgument(String arg) {
+        if (completeWorkingDirectory) {
+            arg = getCompletedPath(arg);
+        }
         if (arg.contains(" ")) {
             if (!arg.contains("\'")) {
                 return "'" + arg + "'";
@@ -301,70 +365,49 @@ public class MavenExecJava {
         }
     }
 
-    public static class MainFinder extends ClassVisitor {
-        protected String name;
-        protected String className;
-        protected boolean hasMain;
-        protected boolean nameMatched;
-
-        public MainFinder(String name) {
-            super(Opcodes.ASM6);
-            this.name = name;
-        }
-
-        public boolean hasMain() {
-            return hasMain;
-        }
-
-        public String getClassName() {
-            return className;
-        }
-
-        public boolean isNameMatched() {
-            return nameMatched;
-        }
-
-        @Override
-        public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
-            className = name.replace('/', '.');
-            if (this.name != null) {
-                name = name.replace('$', '/');
-
-                int dot = name.lastIndexOf('/');
-                String lastName = name;
-                if (dot != -1) {
-                    lastName = name.substring(dot + 1);
-                }
-                nameMatched = getNamePattern().matcher(lastName).matches();
-            } else {
-                nameMatched = true;
-            }
-        }
-
-        public Pattern getNamePattern() {
-            StringBuilder buf = new StringBuilder();
-            for (char c : this.name.toCharArray()) {
-                char upper = Character.toUpperCase(c);
-                if (c == '*') {
-                    buf.append(".*?");
-                } else if (Character.isUpperCase(c) || upper == c) {
-                    buf.append(c);
+    public String getCompletedPath(String arg) {
+        String[] pathList = arg.split(Pattern.quote(File.pathSeparator));
+        List<String> comp = new ArrayList<>(pathList.length);
+        boolean first = true;
+        for (String path : pathList) {
+            try {
+                Path p = Paths.get(path);
+                if (p.isAbsolute()) {
+                    comp.add(path);
+                } else if (p.getNameCount() >= 1 &&
+                            Files.exists(p.getName(0))) {
+                    //actually a relative path
+                    String absPath = p.normalize().toAbsolutePath().toString();
+                    log("complete: %s -> %s", p, absPath);
+                    comp.add(absPath);
                 } else {
-                    buf.append("[").append(c).append(upper).append("]");
+                    comp.add(first ? getCompletedPathOfPropertySet(path) : path);
                 }
-                buf.append(".*?");
+            } catch (InvalidPathException ipe) {
+                comp.add(first ? getCompletedPathOfPropertySet(path) : path);
             }
-            return Pattern.compile(buf.toString());
-        }
 
-        @Override
-        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-            if (name.equals("main") &&
-                    ((access & Opcodes.ACC_STATIC) != 0) && ((access & Opcodes.ACC_PUBLIC) != 0) &&
-                    descriptor.equals("([Ljava/lang/String;)V")) {
-                hasMain = true;
+            first = false;
+        }
+        return String.join(File.pathSeparator, comp);
+    }
+
+    public String getCompletedPathOfPropertySet(String path) { //path is already separated by File.pathSeparator
+        if (path.startsWith("-") && path.contains("=")) { //-...=p1
+            int i = path.indexOf('=');
+            String rest = path.substring(i + 1); //...=p1
+            Path rp = Paths.get(rest);
+            if (!rp.isAbsolute() && rp.getNameCount() >= 1 &&
+                    Files.exists(rp.getName(0))) {
+                String absPath = rp.normalize().toAbsolutePath().toString();
+                log("complete: %s -> %s", rp, absPath);
+                return path.substring(0, i) + absPath;
+            } else {
+                return path;
             }
-            return super.visitMethod(access, name, descriptor, signature, exceptions);
+        } else {
+            return path;
         }
     }
+
 }

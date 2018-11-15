@@ -79,6 +79,11 @@ public class ProcessShell<OutType> {
         return get(array.toArray(new String[0]));
     }
 
+    @Override
+    public String toString() {
+        return getClass().getSimpleName() + "(" + String.join(" ", builder.command()) + ")";
+    }
+
     public ProcessBuilder getBuilder() {
         return builder;
     }
