@@ -8,6 +8,9 @@ The project uses [apache-maven](http://maven.apache.org) and depends on Java 8 o
 Add the script `mvn-exec` to your `PATH` and execute the script.
 The script will automatically compile the project with Maven.
 
+You can also build the utility with `mvn compile package assembly:single` 
+and then you can execute `java -jar target/mvn-exec-1.0-SNAPSHOT-jar-with-dependency.jar`
+
 * specify your maven project path with `-p` option.
 * supply a class-name in your project you want to launch.
 

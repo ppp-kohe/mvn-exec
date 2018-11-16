@@ -167,6 +167,8 @@ public class MavenExecJava {
                     break;
                 } else if (arg.equals("-c") || arg.equals("--compile")) {
                     compile = true;
+                } else if (arg.equals("-sac") || arg.equals("--suppressAutoCompile")) {
+                    autoCompile = false;
                 } else if (arg.equals("-sc") || arg.equals("--suppressComplete")) {
                     completeWorkingDirectory = false;
                 } else if (arg.startsWith("-D") && arg.length() > "-D".length()) {
@@ -181,6 +183,7 @@ public class MavenExecJava {
                         name = prop;
                         value = "";
                     }
+                    System.setProperty(name, value);
                     propertySettings.add(new AbstractMap.SimpleEntry<>(name, value));
 
                 } else if (arg.equals("--")) {
@@ -275,14 +278,15 @@ public class MavenExecJava {
     }
 
     public List<File> getClassesDirectories(File projectDir) {
+        boolean noTarget = !projectMayHaveNoTarget(projectDir);
         File targetDir = new File(projectDir, "target");
-        if (autoCompile && !targetDir.isDirectory() && !projectMayHaveNoTarget(projectDir)) {
+
+        if (autoCompile && !targetDir.isDirectory() && noTarget) {
             compileProject(projectDir);
         }
         if (!targetDir.isDirectory()) {
-            throw new RuntimeException("fail: no " + targetDir);
+            log("no %s", targetDir);
         }
-
         File classesDir = new File(targetDir, "classes");
         File testClassesDir = new File(targetDir, "test-classes");
         return Arrays.asList(classesDir, testClassesDir);
