@@ -20,7 +20,7 @@ e.g. suppose `my-maven-project` contains `my.pack.MyMainClass` as an executable 
 The script launch the class via the following command line:
 
 ```bash
-  % mvn exec:java -Dexec.classpathScope=test \
+  > mvn exec:java -Dexec.classpathScope=test \
      -Dexec.mainClass=my.pack.MyMainClass \
      -Dexec.args="arg1 arg2 arg3"
 ```
@@ -39,6 +39,16 @@ The script launch the class via the following command line:
   my.pack.MyMainClass
   ...
 
+```
+
+* append `-c` in order to run `mvn compile` before execution if you have edited some code in your project
+
+```bash
+  %mvn-exec -p path/to/my-maven-project -c MyMainClass arg1 arg2 arg3
+  > mvn compile
+  > mvn exec:java -Dexec.classpathScope=test \
+    -Dexec.mainClass=my.pack.MyMainClass \
+    -Dexec.args="arg1 arg2 arg3"
 ```
 
 Note: `mvn exec:java` seems to be designed for executing under the project directory of current working directory.

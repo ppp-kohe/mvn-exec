@@ -26,17 +26,23 @@ public class MavenExecJava {
     protected LinkedHashSet<ExecMode> modes = new LinkedHashSet<>();
     protected boolean compile;
     protected boolean completeWorkingDirectory = true;
+    protected boolean autoCompile = true;
 
-    protected boolean debug = System.getProperty("autogui.lib.exec.debug", "false").equals("true");
+    protected boolean debug;
 
     public static String MAVEN_OPTS_LOG_LEVEL = "-Dorg.slf4j.simpleLogger.defaultLogLevel=";
 
     public enum ExecMode {
         Execute,
+        ExecuteDefault,
         FindMainClass,
         ListMainClass,
         GetCommand,
         Help,
+    }
+
+    public MavenExecJava() {
+         updateDebug();
     }
 
     public void log(String fmt, Object... args) {
@@ -71,6 +77,10 @@ public class MavenExecJava {
                     executeExecute();
                     break;
                 }
+                case ExecuteDefault: {
+                    executeExecuteDefault();
+                    break;
+                }
                 case GetCommand: {
                     executeGetCommand();
                     break;
@@ -92,12 +102,27 @@ public class MavenExecJava {
         log("finish");
     }
 
+    private void updateDebug() {
+        debug = System.getProperty("org.autogui.exec.debug", "false").equals("true");
+    }
+
     public void executeExecute() {
+        executeExecute(false);
+    }
+
+    public void executeExecuteDefault() {
+        executeExecute(true);
+    }
+
+    public void executeExecute(boolean def) {
         if (mainClass != null) {
             String name = findMainClass(projectPath, mainClass);
             ProcessShell sh = getCommand(name, arguments);
             log("command %s", sh);
-            sh.echo().runToReturnCode();
+            if (def) {
+                sh.echo();
+            }
+            sh.runToReturnCode();
         }
     }
 
@@ -135,7 +160,7 @@ public class MavenExecJava {
                     modes.add(ExecMode.ListMainClass);
                 } else if (arg.equals("-g") || arg.equals("--get")) {
                     modes.add(ExecMode.GetCommand);
-                } else if (arg.equals("-e") || arg.equals("--exec")) {
+                } else if (arg.equals("-e") || arg.equals("--execute")) {
                     modes.add(ExecMode.Execute);
                 } else if (arg.equals("-h") || arg.equals("--help")) {
                     modes.add(ExecMode.Help);
@@ -147,13 +172,16 @@ public class MavenExecJava {
                 } else if (arg.startsWith("-D") && arg.length() > "-D".length()) {
                     String prop = arg.substring("-D".length());
                     int n = prop.indexOf('=');
+                    String name;
+                    String value;
                     if (n >= 0) {
-                        String name = prop.substring(0, n);
-                        String value = prop.substring(n + 1);
-                        propertySettings.add(new AbstractMap.SimpleEntry<>(name, value));
+                        name = prop.substring(0, n);
+                        value = prop.substring(n + 1);
                     } else {
-                        propertySettings.add(new AbstractMap.SimpleEntry<>(prop, ""));
+                        name = prop;
+                        value = "";
                     }
+                    propertySettings.add(new AbstractMap.SimpleEntry<>(name, value));
 
                 } else if (arg.equals("--")) {
                     argsPart = true;
@@ -176,9 +204,11 @@ public class MavenExecJava {
             if (mainClass == null) {
                 modes.add(ExecMode.Help);
             } else {
-                modes.add(ExecMode.Execute);
+                modes.add(ExecMode.ExecuteDefault);
             }
         }
+        updateDebug();
+
     }
 
     public void help() {
@@ -190,13 +220,14 @@ public class MavenExecJava {
                 getClass().getName() + " [options] <mainClass> <arguments>...\n" +
                 "     <mainClass>   :  fully qualified name or sub-sequence of characters.\n" +
                 "             In the latter case, \"Abc\" becomes the pattern \"A.*?[bB].*?[cC]\".\n" +
-                "     -p | --project <path> : set the maven project directory\n" +
-                "     -f | --find   :  show the matched class name\n" +
-                "     -l | --list   :  show list of main-classes\n" +
-                "     -g | --get    :  show the command line\n" +
-                "     -e | --exec   :  execute the command line. automatically set if no -f,-l or -g.\n" +
-                "     -c | --compile:  mvn compile before execution.\n" +
-                "     -sc| --suppressComplete : suppress completion of relative path for arguments of following patterns.\n" +
+                "     -p  | --project <path> : set the maven project directory\n" +
+                "     -f  | --find   :  show the matched class name\n" +
+                "     -l  | --list   :  show list of main-classes\n" +
+                "     -g  | --get    :  show the command line.\n" +
+                "     -e  | --execute:  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
+                "     -c  | --compile:  mvn compile before execution.\n" +
+                "     -sac| --suppressAutoCompile : suppress checking target directory and executing \"mvn compile\".\n" +
+                "     -sc | --suppressComplete : suppress completion of relative path for arguments of following patterns.\n" +
                 "                  1. a relative path: <p>\n" +
                 "                  2. a path list: <p1>" + ps + "<p2>...\n" +
                 "                  3. a path list of value of property like arg: -...=<p1>" + ps + "<p1>...\n" +
@@ -245,7 +276,7 @@ public class MavenExecJava {
 
     public List<File> getClassesDirectories(File projectDir) {
         File targetDir = new File(projectDir, "target");
-        if (!targetDir.isDirectory()) {
+        if (autoCompile && !targetDir.isDirectory() && !projectMayHaveNoTarget(projectDir)) {
             compileProject(projectDir);
         }
         if (!targetDir.isDirectory()) {
@@ -255,6 +286,27 @@ public class MavenExecJava {
         File classesDir = new File(targetDir, "classes");
         File testClassesDir = new File(targetDir, "test-classes");
         return Arrays.asList(classesDir, testClassesDir);
+    }
+
+    public boolean projectMayHaveNoTarget(File projectDir) {
+        File pomFile = new File(projectDir, "pom.xml");
+        if (!pomFile.exists()) {
+            return true;
+        }
+        try {
+            for (String line : Files.readAllLines(pomFile.toPath())) {
+                //quick checking
+                if (line.contains("<packaging>pom</packaging>")) { //aggregation of sub-modules
+                    log("project have <packaging>pom</packaging>");
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception ex) {
+            log("error %s", ex);
+            ex.printStackTrace();
+            return true;
+        }
     }
 
     public void compileProject(File projectDir) {
