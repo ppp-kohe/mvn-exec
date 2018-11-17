@@ -17,7 +17,7 @@ public class MainFinder extends ClassVisitor {
     protected boolean nameMatched;
 
     public MainFinder(String name) {
-        super(Opcodes.ASM6);
+        super(Opcodes.ASM7);
         this.name = name;
     }
 

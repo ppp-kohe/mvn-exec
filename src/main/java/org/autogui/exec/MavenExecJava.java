@@ -31,6 +31,7 @@ public class MavenExecJava {
     protected boolean debug;
 
     public static String MAVEN_OPTS_LOG_LEVEL = "-Dorg.slf4j.simpleLogger.defaultLogLevel=";
+    public static String MAVEN_EXEC_DEBUG = "org.autogui.exec.debug";
 
     public enum ExecMode {
         Execute,
@@ -52,8 +53,8 @@ public class MavenExecJava {
     }
 
     public void run(String... args) {
-        log("start");
         parseArgs(args);
+        log("start %s", modes);
 
         if (modes.contains(ExecMode.Help)) {
             help();
@@ -103,7 +104,7 @@ public class MavenExecJava {
     }
 
     private void updateDebug() {
-        debug = System.getProperty("org.autogui.exec.debug", "false").equals("true");
+        debug = System.getProperty(MAVEN_EXEC_DEBUG, "false").equals("true");
     }
 
     public void executeExecute() {
@@ -173,19 +174,10 @@ public class MavenExecJava {
                     completeWorkingDirectory = false;
                 } else if (arg.startsWith("-D") && arg.length() > "-D".length()) {
                     String prop = arg.substring("-D".length());
-                    int n = prop.indexOf('=');
-                    String name;
-                    String value;
-                    if (n >= 0) {
-                        name = prop.substring(0, n);
-                        value = prop.substring(n + 1);
-                    } else {
-                        name = prop;
-                        value = "";
-                    }
-                    System.setProperty(name, value);
-                    propertySettings.add(new AbstractMap.SimpleEntry<>(name, value));
-
+                    parseArgProp(prop);
+                } else if (arg.equals("--debug")) {
+                    debug = true;
+                    System.setProperty(MAVEN_EXEC_DEBUG, "true");
                 } else if (arg.equals("--")) {
                     argsPart = true;
                 } else {
@@ -211,38 +203,52 @@ public class MavenExecJava {
             }
         }
         updateDebug();
+    }
 
+    public void parseArgProp(String prop) { //name=value
+        int n = prop.indexOf('=');
+        String name;
+        String value;
+        if (n >= 0) {
+            name = prop.substring(0, n);
+            value = prop.substring(n + 1);
+        } else {
+            name = prop;
+            value = "";
+        }
+        System.setProperty(name, value);
+        propertySettings.add(new AbstractMap.SimpleEntry<>(name, value));
     }
 
     public void help() {
         String ps = File.pathSeparator;
         String sep = File.separator;
 
-
         String helpMessage = "" +
                 getClass().getName() + " [options] <mainClass> <arguments>...\n" +
-                "     <mainClass>   :  fully qualified name or sub-sequence of characters.\n" +
-                "             In the latter case, \"Abc\" becomes the pattern \"A.*?[bB].*?[cC]\".\n" +
-                "     -p  | --project <path> : set the maven project directory\n" +
-                "     -f  | --find   :  show the matched class name\n" +
-                "     -l  | --list   :  show list of main-classes\n" +
-                "     -g  | --get    :  show the command line.\n" +
-                "     -e  | --execute:  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
-                "     -c  | --compile:  mvn compile before execution.\n" +
-                "     -sac| --suppressAutoCompile : suppress checking target directory and executing \"mvn compile\".\n" +
-                "     -sc | --suppressComplete : suppress completion of relative path for arguments of following patterns.\n" +
-                "                  1. a relative path: <p>\n" +
+                "     <mainClass>        :  fully qualified name or sub-sequence of characters.\n" +
+                "                           In the latter case, \"Abc\" becomes the pattern \"A.*?[bB].*?[cC]\".\n" +
+                "     -p  | --project <path> :  set the maven project directory. repeatable, but only the last one is used.\n" +
+                "     -f  | --find       :  show the matched main-class name.\n" +
+                "     -l  | --list       :  show list of main-classes.\n" +
+                "     -g  | --get        :  show the command line.\n" +
+                "     -e  | --execute    :  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
+                "     -c  | --compile    :  \"mvn compile\" before execution.\n" +
+                "     -sac| --suppressAutoCompile :  suppress checking target directory and executing \"mvn compile\".\n" +
+                "     -sc | --suppressComplete    :  suppress completion of relative path for arguments.\n" +
+                "                 Default completion behavior recognize the following patterns as relative path:\n" +
+                "                  1. a relative path: <p1>\n" +
                 "                  2. a path list: <p1>" + ps + "<p2>...\n" +
-                "                  3. a path list of value of property like arg: -...=<p1>" + ps + "<p1>...\n" +
-                "                 Default completion behavior recognize a path that \n" +
-                "                      starts with non-/ (Paths.get(p).isAbsolute()==false) \n" +
-                "                      and exists the first one component as a relative path.\n" +
-                "                      i.e. \"existing" + sep + "nonExisting\" will be completed as \"" + sep + "path" + sep + "to" + sep + "existing" + sep + "nonExisting\"\n" +
+                "                  3. a path list of value of property-like arg: -...=<p1>" + ps + "<p1>...\n" +
+                "                 If a path <pN> starts with non-\"/\" (Paths.get(p).isAbsolute()==false) \n" +
+                "                   and the first one component of the path exists, then <pN> will be completed. \n" +
+                "                   i.e. \"existing" + sep + "nonExisting\" will be completed as \"" + sep + "path" + sep + "to" + sep + "existing" + sep + "nonExisting\".\n" +
                 "               Note: \"mvn exec:java\" cannot change the working directory other than the target project dir.\n" +
                 "                   Thus, we need to provide the absolute path for an outer path of the project\n" +
                 "                    as arguments for the executed program. \n" +
-                "     -D<name>[=<value>]    :  set a system-property\n" +
-                "     --            :  indicate the start of mainClass and/or arguments\n";
+                "     -D<name>[=<value>] :  set a system-property. repeatable.\n" +
+                "     --debug            :  show debugging messages." +
+                "     --                 :  indicate the start of mainClass and/or arguments.s\n";
         System.out.println(helpMessage);
     }
 
@@ -355,7 +361,9 @@ public class MavenExecJava {
         return ProcessShell.get(getMavenCommand(mainClass, args))
                 .set(p -> {
                     p.directory(projectPath);
-                    p.environment().put("MAVEN_OPTS", getMavenOpts());
+                    String mavenOpts = getMavenOpts();
+                    log("MAVEN_OPTS: %s", mavenOpts);
+                    p.environment().put("MAVEN_OPTS", mavenOpts);
                     if (debug) {
                         p.environment().put("MAVEN_EXEC_DEBUG_INIT_TIME", commandCreationTime.toString());
                     }
@@ -433,7 +441,7 @@ public class MavenExecJava {
                 } else if (p.getNameCount() >= 1 &&
                             Files.exists(p.getName(0))) {
                     //actually a relative path
-                    String absPath = p.normalize().toAbsolutePath().toString();
+                    String absPath = p.toAbsolutePath().normalize().toString();
                     log("complete: %s -> %s", p, absPath);
                     comp.add(absPath);
                 } else {
