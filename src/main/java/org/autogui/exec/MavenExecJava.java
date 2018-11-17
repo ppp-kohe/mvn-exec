@@ -247,7 +247,7 @@ public class MavenExecJava {
                 "                   Thus, we need to provide the absolute path for an outer path of the project\n" +
                 "                    as arguments for the executed program. \n" +
                 "     -D<name>[=<value>] :  set a system-property. repeatable.\n" +
-                "     --debug            :  show debugging messages." +
+                "     --debug            :  show debugging messages.\n" +
                 "     --                 :  indicate the start of mainClass and/or arguments.s\n";
         System.out.println(helpMessage);
     }
