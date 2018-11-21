@@ -25,8 +25,7 @@ then
     cd "${projectdir}"
     mvn dependency:build-classpath -DincludeArtifactIds=asm -Dmdep.outputFile="${asmpathfile}"
     cd "${currentdir}"
-else
-    asmpath=$(cat ${asmpathfile})
 fi
+asmpath=$(cat ${asmpathfile})
 
 java ${MAVEN_EXEC_JAVA_OPTS} -cp "${classesdir}:${asmpath}" org.autogui.exec.MavenExecJava "$@"
