@@ -27,11 +27,13 @@ public class MavenExecJava {
     protected boolean compile;
     protected boolean completeWorkingDirectory = true;
     protected boolean autoCompile = true;
+    protected String logLevel = "off";
 
     protected boolean debug;
 
     public static String MAVEN_OPTS_LOG_LEVEL = "-Dorg.slf4j.simpleLogger.defaultLogLevel=";
     public static String MAVEN_EXEC_DEBUG = "org.autogui.exec.debug";
+
 
     public enum ExecMode {
         Execute,
@@ -172,6 +174,8 @@ public class MavenExecJava {
                     autoCompile = false;
                 } else if (arg.equals("-sc") || arg.equals("--suppressComplete")) {
                     completeWorkingDirectory = false;
+                } else if (arg.equals("-w") || arg.equals("--logWarn")) {
+                    logLevel = "warn";
                 } else if (arg.startsWith("-D") && arg.length() > "-D".length()) {
                     String prop = arg.substring("-D".length());
                     parseArgProp(prop);
@@ -246,6 +250,7 @@ public class MavenExecJava {
                 "               Note: \"mvn exec:java\" cannot change the working directory other than the target project dir.\n" +
                 "                   Thus, we need to provide the absolute path for an outer path of the project\n" +
                 "                    as arguments for the executed program. \n" +
+                "     -w  | --logWarn    :  set the log-level to off, meaning \"-Dorg.slf4j.simpleLogger.defaultLogLevel=warn\" instead of \"off\". \n" +
                 "     -D<name>[=<value>] :  set a system-property. repeatable.\n" +
                 "     --debug            :  show debugging messages.\n" +
                 "     --                 :  indicate the start of mainClass and/or arguments.s\n";
@@ -284,10 +289,10 @@ public class MavenExecJava {
     }
 
     public List<File> getClassesDirectories(File projectDir) {
-        boolean noTarget = !projectMayHaveNoTarget(projectDir);
+        boolean canHaveTarget = !projectMayHaveNoTarget(projectDir);
         File targetDir = new File(projectDir, "target");
 
-        if (autoCompile && !targetDir.isDirectory() && noTarget) {
+        if (autoCompile && !targetDir.isDirectory() && canHaveTarget) {
             compileProject(projectDir);
         }
         if (!targetDir.isDirectory()) {
@@ -402,7 +407,7 @@ public class MavenExecJava {
             opts = "";
         }
         if (!opts.contains(MAVEN_OPTS_LOG_LEVEL)) {
-            opts += " " + MAVEN_OPTS_LOG_LEVEL + "off";
+            opts += " " + MAVEN_OPTS_LOG_LEVEL + logLevel;
         }
         return opts;
     }

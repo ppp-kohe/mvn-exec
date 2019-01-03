@@ -6,7 +6,7 @@
 
     <groupId>org.autogui</groupId>
     <artifactId>mvn-exec</artifactId>
-    <version>1.0</version>
+    <version>1.1</version>
 
     <name>mvn-exec</name>
     <description>a command line wrapper for mvn exec:java</description>
