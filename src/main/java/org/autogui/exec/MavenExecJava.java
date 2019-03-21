@@ -19,7 +19,7 @@ public class MavenExecJava {
         new MavenExecJava().run(args);
     }
 
-    protected File projectPath = new File(".");
+    protected List<File> projectPaths = new ArrayList<>();
     protected String mainClass = null;
     protected List<String> arguments = new ArrayList<>();
     protected List<Map.Entry<String,String>> propertySettings = new ArrayList<>();
@@ -63,14 +63,10 @@ public class MavenExecJava {
             return;
         }
 
-        log("check %s/pom.xml", projectPath);
-        if (!new File(projectPath, "pom.xml").isFile()) {
-            throw new RuntimeException("no pom.xml in " + projectPath);
-        }
+        checkProjectsPom();
 
         if (compile) {
-            log("compile");
-            compileProject(projectPath);
+            compileProjects();
         }
 
         for (ExecMode mode : modes) {
@@ -105,6 +101,20 @@ public class MavenExecJava {
         log("finish");
     }
 
+    public void checkProjectsPom() {
+        log("check pom.xml in %s", projectPaths);
+        projectPaths.removeIf(path ->
+                !new File(path, "pom.xml").isFile());
+        if (projectPaths.isEmpty()) {
+            throw new RuntimeException("no pom.xml in " + projectPaths);
+        }
+    }
+
+    public void compileProjects() {
+        log("compile");
+        projectPaths.forEach(this::compileProject);
+    }
+
     private void updateDebug() {
         debug = System.getProperty(MAVEN_EXEC_DEBUG, "false").equals("true");
     }
@@ -119,8 +129,8 @@ public class MavenExecJava {
 
     public void executeExecute(boolean def) {
         if (mainClass != null) {
-            String name = findMainClass(projectPath, mainClass);
-            ProcessShell sh = getCommand(name, arguments);
+            MainClassInfo main = findMainClassFromProjects(mainClass);
+            ProcessShell sh = getCommand(main.getProjectPath(), main.getName(), arguments);
             log("command %s", sh);
             if (def) {
                 sh.echo();
@@ -131,21 +141,21 @@ public class MavenExecJava {
 
     public void executeGetCommand() {
         if (mainClass != null) {
-            String name = findMainClass(projectPath, mainClass);
-            ProcessShell sh = getCommand(name, arguments);
+            MainClassInfo main = findMainClassFromProjects(mainClass);
+            ProcessShell sh = getCommand(main.getProjectPath(), main.getName(), arguments);
             System.out.println(sh.getEchoString());
         }
     }
 
     public void executeFindMainClass() {
         if (mainClass != null) {
-            String name = findMainClass(projectPath, mainClass);
-            System.out.println(name);
+            MainClassInfo main = findMainClassFromProjects(mainClass);
+            System.out.println(main.getName());
         }
     }
 
     public void executeListMainClass() {
-        listMainClasses(projectPath);
+        listMainClassesFromProjects();
     }
 
 
@@ -154,9 +164,13 @@ public class MavenExecJava {
         for (int i = 0, l = args.length; i < l; ++i) {
             String arg = args[i];
             if (!argsPart) {
-                if (arg.equals("-p") || arg.endsWith("--project")) {
+                if (arg.equals("-p") || arg.equals("--project")) {
                     ++i;
-                    projectPath = new File(args[i]);
+                    projectPaths.add(0, new File(args[i]));
+                } else if (arg.equals("-pr") || arg.equals("--projectReset")) {
+                    ++i;
+                    projectPaths.clear();
+                    projectPaths.add(0, new File(args[i]));
                 } else if (arg.equals("-f") || arg.equals("--find")) {
                     modes.add(ExecMode.FindMainClass);
                 } else if (arg.equals("-l") || arg.equals("--list")) {
@@ -201,6 +215,9 @@ public class MavenExecJava {
                 }
             }
         }
+        if (projectPaths.isEmpty()) {
+            projectPaths.add(new File("."));
+        }
         if (modes.isEmpty()) {
             if (mainClass == null) {
                 modes.add(ExecMode.Help);
@@ -234,7 +251,8 @@ public class MavenExecJava {
                 getClass().getName() + " [options] <mainClass> <arguments>...\n" +
                 "     <mainClass>        :  fully qualified name or sub-sequence of characters.\n" +
                 "                           In the latter case, \"Abc\" becomes the pattern \"A.*?[bB].*?[cC]\".\n" +
-                "     -p  | --project <path> :  set the maven project directory. repeatable, but only the last one is used.\n" +
+                "     -p  | --project <path>      :  add a maven project directory. repeatable. later items have high precedence.\n" +
+                "     -pr | --projectReset <path> :  clear existing project directories and add a directory." +
                 "     -f  | --find       :  show the matched main-class name.\n" +
                 "     -l  | --list       :  show list of main-classes.\n" +
                 "     -g  | --get        :  show the command line.\n" +
@@ -260,6 +278,49 @@ public class MavenExecJava {
         System.out.println(helpMessage);
     }
 
+    public MainClassInfo findMainClassFromProjects(String name) {
+        Pattern namePattern = MainFinder.getPatternFromString(name);
+        log("findMainClass pattern: %s", namePattern);
+        for (File path : projectPaths) {
+            MainClassInfo main = findMainClass(path, namePattern);
+            if (main != null) {
+                log("found: %s", main);
+                return main;
+            }
+        }
+        return null;
+    }
+
+    public static class MainClassInfo {
+        protected File projectPath;
+        protected String name;
+
+        public MainClassInfo(File projectPath, String name) {
+            this.projectPath = projectPath;
+            this.name = name;
+        }
+
+        public File getProjectPath() {
+            return projectPath;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public String toString() {
+            return "MainClassInfo{" +
+                    "projectPath=" + projectPath +
+                    ", name='" + name + '\'' +
+                    '}';
+        }
+    }
+
+    public void listMainClassesFromProjects() {
+        projectPaths.forEach(this::listMainClasses);
+    }
+
     public void listMainClasses(File projectPath) {
         for (File dir : getClassesDirectories(projectPath)) {
             if (dir.isDirectory()) {
@@ -274,21 +335,17 @@ public class MavenExecJava {
         }
     }
 
-    public String findMainClass(File projectDir, String name) {
-        if (name != null && name.contains(".")) {
-            return name;
-        } else {
-            for (File dir : getClassesDirectories(projectDir)) {
-                if (dir.isDirectory()) {
-                    String mainName = findMainClassFromClassesDir(dir, name);
-                    if (mainName != null) {
-                        log("found %s from %s", mainName, dir);
-                        return mainName;
-                    }
+    public MainClassInfo findMainClass(File projectDir, Pattern namePattern) {
+        for (File dir : getClassesDirectories(projectDir)) {
+            if (dir.isDirectory()) {
+                String mainName = findMainClassFromClassesDir(dir, namePattern);
+                if (mainName != null) {
+                    log("found %s from %s", mainName, dir);
+                    return new MainClassInfo(projectDir, mainName);
                 }
             }
-            return null;
         }
+        return null;
     }
 
     public List<File> getClassesDirectories(File projectDir) {
@@ -337,9 +394,9 @@ public class MavenExecJava {
                 .echo().runToReturnCode();
     }
 
-    public String findMainClassFromClassesDir(File classesDir, String name) {
+    public String findMainClassFromClassesDir(File classesDir, Pattern namePattern) {
         try (Stream<Path> paths = findClassFromClassesDir(classesDir)) {
-            return paths.map(p -> matchClass(p, name))
+            return paths.map(p -> matchClass(p, namePattern))
                     .filter(Objects::nonNull)
                     .findFirst()
                     .orElse(null);
@@ -354,9 +411,9 @@ public class MavenExecJava {
                 .filter(p -> p.getFileName().toString().endsWith(".class"));
     }
 
-    public String matchClass(Path classFile, String name) {
+    public String matchClass(Path classFile, Pattern namePattern) {
         try {
-            return new MainFinder(name).matchClass(classFile);
+            return new MainFinder(namePattern).matchClass(classFile);
         } catch (Exception ex) {
             System.err.println("matchClass: " + classFile + " : " + ex);
             ex.printStackTrace();
@@ -364,7 +421,7 @@ public class MavenExecJava {
         }
     }
 
-    public ProcessShell<?> getCommand(String mainClass, List<String> args) {
+    public ProcessShell<?> getCommand(File projectPath, String mainClass, List<String> args) {
         Instant commandCreationTime = Instant.now();
         return ProcessShell.get(getMavenCommand(mainClass, args))
                 .set(p -> {

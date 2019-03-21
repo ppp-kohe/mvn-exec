@@ -11,14 +11,18 @@ import java.nio.file.Path;
 import java.util.regex.Pattern;
 
 public class MainFinder extends ClassVisitor {
-    protected String name;
+    protected Pattern namePattern;
     protected String className;
     protected boolean hasMain;
     protected boolean nameMatched;
 
     public MainFinder(String name) {
+        this(getPatternFromString(name));
+    }
+
+    public MainFinder(Pattern namePattern) {
         super(Opcodes.ASM7);
-        this.name = name;
+        this.namePattern = namePattern;
     }
 
     public String matchClass(Path classFile) throws IOException {
@@ -45,7 +49,11 @@ public class MainFinder extends ClassVisitor {
     @Override
     public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
         className = name.replace('/', '.');
-        if (this.name != null) {
+        if (this.namePattern != null) {
+            name = name.replace('$', '.')
+                        .replace('/', '.');
+
+            /*
             name = name.replace('$', '/');
 
             int dot = name.lastIndexOf('/');
@@ -53,24 +61,55 @@ public class MainFinder extends ClassVisitor {
             if (dot != -1) {
                 lastName = name.substring(dot + 1);
             }
-            nameMatched = getNamePattern().matcher(lastName).matches();
+            */
+            nameMatched = namePattern.matcher(name).matches();
         } else {
             nameMatched = true;
         }
     }
 
+
     public Pattern getNamePattern() {
+        return namePattern;
+    }
+
+    /**
+     * If <i>str</i> contains ".", it regards as a sub-sequence of qualified name.
+     *  The pattern becomes
+     * <pre>
+     *     ".*?" + quote(<i>str</i>)
+     * </pre>
+     * Otherwise, it regards as prefix letters of CamelCase class name (excluding package names).
+     *  The pattern becomes
+     * <pre>
+     *     ".*?" + prefixPat(<i>str</i>[0]) + "[^.]*?" + prefixPat(<i>str</i>[1]) ... + "[^.]*?"
+     * </pre>
+     *   where <code>prefixPat(c)</code> is the following conversion.
+     * <pre>
+     *     prefixPat(UpperCase <i>u</i>)   =&gt; "<i>u</i>"
+     *     prefixPat(LowerCase <i>l</i>)   =&gt; "[" + <i>l</i> + upper(<i>l</i>) + "]"
+     *     prefixPat("*")           =&gt; ".*?"
+     * </pre>
+     * @param str pattern string
+     * @return compiled pattern of str
+     */
+    public static Pattern getPatternFromString(String str) {
         StringBuilder buf = new StringBuilder();
-        for (char c : this.name.toCharArray()) {
-            char upper = Character.toUpperCase(c);
-            if (c == '*') {
-                buf.append(".*?");
-            } else if (Character.isUpperCase(c) || upper == c) {
-                buf.append(c);
-            } else {
-                buf.append("[").append(c).append(upper).append("]");
+        buf.append(".*?");
+        if (str.contains(".")) {
+            buf.append(Pattern.quote(str));
+        } else {
+            for (char c : str.toCharArray()) {
+                char upper = Character.toUpperCase(c);
+                if (c == '*') {
+                    buf.append(".*?");
+                } else if (Character.isUpperCase(c) || upper == c) {
+                    buf.append(c);
+                } else {
+                    buf.append("[").append(c).append(upper).append("]");
+                }
+                buf.append("[^\\.]*?");
             }
-            buf.append(".*?");
         }
         return Pattern.compile(buf.toString());
     }
