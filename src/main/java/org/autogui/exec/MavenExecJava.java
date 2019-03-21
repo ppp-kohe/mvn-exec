@@ -27,7 +27,7 @@ public class MavenExecJava {
     protected boolean compile;
     protected boolean completeWorkingDirectory = true;
     protected boolean autoCompile = true;
-    protected String logLevel = "off";
+    protected String logLevel = "error";
 
     protected boolean debug;
 
@@ -176,6 +176,8 @@ public class MavenExecJava {
                     completeWorkingDirectory = false;
                 } else if (arg.equals("-w") || arg.equals("--logWarn")) {
                     logLevel = "warn";
+                } else if (arg.equals("--logOff")) {
+                    logLevel = "off";
                 } else if (arg.startsWith("-D") && arg.length() > "-D".length()) {
                     String prop = arg.substring("-D".length());
                     parseArgProp(prop);
@@ -250,7 +252,8 @@ public class MavenExecJava {
                 "               Note: \"mvn exec:java\" cannot change the working directory other than the target project dir.\n" +
                 "                   Thus, we need to provide the absolute path for an outer path of the project\n" +
                 "                    as arguments for the executed program. \n" +
-                "     -w  | --logWarn    :  set the log-level to off, meaning \"-Dorg.slf4j.simpleLogger.defaultLogLevel=warn\" instead of \"off\". \n" +
+                "     -w  | --logWarn    :  set the log-level to \"warn\", meaning \"-Dorg.slf4j.simpleLogger.defaultLogLevel=warn\" instead of \"error\". \n" +
+                "     --logOff           :  set the log-level to \"error\".\n" +
                 "     -D<name>[=<value>] :  set a system-property. repeatable.\n" +
                 "     --debug            :  show debugging messages.\n" +
                 "     --                 :  indicate the start of mainClass and/or arguments.s\n";

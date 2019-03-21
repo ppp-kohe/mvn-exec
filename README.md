@@ -121,7 +121,11 @@ e.g. `my.pack.MyMainClass` can be specifyed by `mmc`, `MMC`, `Mmc`, `MyMaCl` and
 ### Showing errors
 
 `exec-maven-plugin` outputs some kind of errors through maven's logger. 
-The tool suppresses those logging messages because of invading the standard-output of the execution of command line. This is realized by supplying `-Dorg.slf4j.simpleLogger.defaultLogLevel=off` via the environment variable `MAVEN_OPTS`. 
+The tool suppresses those logging messages because of invading the standard-output of the execution of command line.
+This is realized by supplying `-Dorg.slf4j.simpleLogger.defaultLogLevel=error` via the environment variable `MAVEN_OPTS`.
+The log-level only shows `[ERROR]` lines to the standard-output, which indicate occurrence of errors by compilation failure or unhandled exceptions.
+
+* `--logOff` completely turns off log-lines including those error messages, realized by `-Dorg.slf4j.simpleLogger.defaultLogLevel=off`.
 
 The suppressed messages include JVM launching errors such as `ClassNotFoundException` and `UnsupportedClassVersionError`. 
 Thus, if you launch a program compiled in Java 11 by the tool under Java 8, 

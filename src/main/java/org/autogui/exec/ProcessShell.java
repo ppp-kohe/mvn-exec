@@ -100,6 +100,7 @@ public class ProcessShell<OutType> {
     public ProcessShell<OutType> setRedirectToInherit() {
         return set(p -> {
             p.redirectError(ProcessBuilder.Redirect.INHERIT)
+                    .redirectInput(ProcessBuilder.Redirect.INHERIT)
                     .redirectOutput(ProcessBuilder.Redirect.INHERIT);
         });
     };
