@@ -8,6 +8,7 @@ import org.objectweb.asm.Opcodes;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainFinder extends ClassVisitor {
@@ -15,6 +16,7 @@ public class MainFinder extends ClassVisitor {
     protected String className;
     protected boolean hasMain;
     protected boolean nameMatched;
+    protected int nameMatchedScore;
 
     public MainFinder(String name) {
         this(getPatternFromString(name));
@@ -46,6 +48,10 @@ public class MainFinder extends ClassVisitor {
         return nameMatched;
     }
 
+    public int getNameMatchedScore() {
+        return nameMatchedScore;
+    }
+
     @Override
     public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
         className = name.replace('/', '.');
@@ -62,12 +68,61 @@ public class MainFinder extends ClassVisitor {
                 lastName = name.substring(dot + 1);
             }
             */
-            nameMatched = namePattern.matcher(name).matches();
+            nameMatchedScore = match(name, namePattern);
+            nameMatched = nameMatchedScore > 0;
         } else {
+            nameMatchedScore = 1;
             nameMatched = true;
         }
     }
 
+    public static int match(String name, Pattern pattern) {
+        Matcher m = pattern.matcher(name);
+        if (m.matches()) {
+            int score = 0;
+            int prevStart = Integer.MIN_VALUE;
+            for (int i = 0; i < m.groupCount(); ++i) {
+                int pos = m.start(i + 1);
+                String w = subSequenceIfUpperCase(name, pos);
+                if (!w.isEmpty()) {
+                    score += 4;
+                } else if (prevStart + 1 == pos) {
+                    score += 2;
+                } else {
+                    score += 1;
+                }
+                prevStart = pos;
+            }
+            return Math.max(1, score);
+        } else {
+            return 0;
+        }
+    }
+
+    public static String subSequenceIfUpperCase(String name, int pos) {
+        if (pos < name.length()) {
+            char c = name.charAt(pos);
+            if (Character.isUpperCase(c)) {
+                StringBuilder buf = new StringBuilder();
+                buf.append(c);
+                ++pos;
+                while (pos < name.length()) {
+                    char nc = name.charAt(pos);
+                    if (Character.isUpperCase(nc) || Character.isDigit(nc) || nc == '.') {
+                        break;
+                    } else {
+                        buf.append(nc);
+                    }
+                    ++pos;
+                }
+                return buf.toString();
+            } else {
+                return "";
+            }
+        } else {
+            return "";
+        }
+    }
 
     public Pattern getNamePattern() {
         return namePattern;
@@ -86,8 +141,8 @@ public class MainFinder extends ClassVisitor {
      * </pre>
      *   where <code>prefixPat(c)</code> is the following conversion.
      * <pre>
-     *     prefixPat(UpperCase <i>u</i>)   =&gt; "<i>u</i>"
-     *     prefixPat(LowerCase <i>l</i>)   =&gt; "[" + <i>l</i> + upper(<i>l</i>) + "]"
+     *     prefixPat(UpperCase <i>u</i>)   =&gt; "(<i>u</i>)"
+     *     prefixPat(LowerCase <i>l</i>)   =&gt; "([" + <i>l</i> + upper(<i>l</i>) + "])"
      *     prefixPat("*")           =&gt; ".*?"
      * </pre>
      * @param str pattern string
@@ -104,9 +159,9 @@ public class MainFinder extends ClassVisitor {
                 if (c == '*') {
                     buf.append(".*?");
                 } else if (Character.isUpperCase(c) || upper == c) {
-                    buf.append(c);
+                    buf.append("(").append(c).append(")");
                 } else {
-                    buf.append("[").append(c).append(upper).append("]");
+                    buf.append("(").append("[").append(c).append(upper).append("]").append(")");
                 }
                 buf.append("[^\\.]*?");
             }

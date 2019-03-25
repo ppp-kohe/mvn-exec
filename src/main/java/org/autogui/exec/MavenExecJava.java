@@ -34,6 +34,7 @@ public class MavenExecJava {
     public static String MAVEN_OPTS_LOG_LEVEL = "-Dorg.slf4j.simpleLogger.defaultLogLevel=";
     public static String MAVEN_EXEC_DEBUG = "org.autogui.exec.debug";
 
+    protected List<String> mvnOptions = new ArrayList<>();
 
     public enum ExecMode {
         Execute,
@@ -130,7 +131,10 @@ public class MavenExecJava {
     public void executeExecute(boolean def) {
         if (mainClass != null) {
             MainClassInfo main = findMainClassFromProjects(mainClass);
-            ProcessShell sh = getCommand(main.getProjectPath(), main.getName(), arguments);
+            if (main == null) {
+                throw new NoSuchMainClassException(mainClass);
+            }
+            ProcessShell sh = getCommand(main.getPath(), main.getName(), arguments);
             log("command %s", sh);
             if (def) {
                 sh.echo();
@@ -142,7 +146,10 @@ public class MavenExecJava {
     public void executeGetCommand() {
         if (mainClass != null) {
             MainClassInfo main = findMainClassFromProjects(mainClass);
-            ProcessShell sh = getCommand(main.getProjectPath(), main.getName(), arguments);
+            if (main == null) {
+                throw new NoSuchMainClassException(mainClass);
+            }
+            ProcessShell sh = getCommand(main.getPath(), main.getName(), arguments);
             System.out.println(sh.getEchoString());
         }
     }
@@ -150,7 +157,16 @@ public class MavenExecJava {
     public void executeFindMainClass() {
         if (mainClass != null) {
             MainClassInfo main = findMainClassFromProjects(mainClass);
+            if (main == null) {
+                throw new NoSuchMainClassException(mainClass);
+            }
             System.out.println(main.getName());
+        }
+    }
+
+    public static class NoSuchMainClassException extends RuntimeException {
+        public NoSuchMainClassException(String mainClass) {
+            super("not-found: " + mainClass);
         }
     }
 
@@ -177,7 +193,7 @@ public class MavenExecJava {
                     modes.add(ExecMode.ListMainClass);
                 } else if (arg.equals("-g") || arg.equals("--get")) {
                     modes.add(ExecMode.GetCommand);
-                } else if (arg.equals("-e") || arg.equals("--execute")) {
+                } else if (arg.equals("-r") || arg.equals("--run")) {
                     modes.add(ExecMode.Execute);
                 } else if (arg.equals("-h") || arg.equals("--help")) {
                     modes.add(ExecMode.Help);
@@ -196,8 +212,14 @@ public class MavenExecJava {
                     String prop = arg.substring("-D".length());
                     parseArgProp(prop);
                 } else if (arg.equals("--debug")) {
-                    debug = true;
-                    System.setProperty(MAVEN_EXEC_DEBUG, "true");
+                    setDebug();
+                } else if (arg.equals("-e")) {
+                    mvnOptions.add("-e");
+                    logLevel = "warn";
+                } else if (arg.equals("-X")) {
+                    mvnOptions.add("-X");
+                    logLevel = "warn";
+                    setDebug();
                 } else if (arg.equals("--")) {
                     argsPart = true;
                 } else {
@@ -228,6 +250,11 @@ public class MavenExecJava {
         updateDebug();
     }
 
+    protected void setDebug() {
+        debug = true;
+        System.setProperty(MAVEN_EXEC_DEBUG, "true");
+    }
+
     public void parseArgProp(String prop) { //name=value
         int n = prop.indexOf('=');
         String name;
@@ -256,7 +283,7 @@ public class MavenExecJava {
                 "     -f  | --find       :  show the matched main-class name.\n" +
                 "     -l  | --list       :  show list of main-classes.\n" +
                 "     -g  | --get        :  show the command line.\n" +
-                "     -e  | --execute    :  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
+                "     -r  | --run        :  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
                 "     -c  | --compile    :  \"mvn compile\" before execution.\n" +
                 "     -sac| --suppressAutoCompile :  suppress checking target directory and executing \"mvn compile\".\n" +
                 "     -sc | --suppressComplete    :  suppress completion of relative path for arguments.\n" +
@@ -271,48 +298,79 @@ public class MavenExecJava {
                 "                   Thus, we need to provide the absolute path for an outer path of the project\n" +
                 "                    as arguments for the executed program. \n" +
                 "     -w  | --logWarn    :  set the log-level to \"warn\", meaning \"-Dorg.slf4j.simpleLogger.defaultLogLevel=warn\" instead of \"error\". \n" +
-                "     --logOff           :  set the log-level to \"error\".\n" +
+                "     -e                 :  -w and pass -e to maven to show errors.\n" +
+                "     --logOff           :  set the log-level to \"off\".\n" +
                 "     -D<name>[=<value>] :  set a system-property. repeatable.\n" +
-                "     --debug            :  show debugging messages.\n" +
+                "     --debug            :  show debugging messages." +
+                "     -X                 :  --debug and pass -X to mvn.\n" +
                 "     --                 :  indicate the start of mainClass and/or arguments.s\n";
         System.out.println(helpMessage);
     }
 
     public MainClassInfo findMainClassFromProjects(String name) {
         Pattern namePattern = MainFinder.getPatternFromString(name);
+
         log("findMainClass pattern: %s", namePattern);
+        int projectScale = (projectPaths.isEmpty() ? 0 : (int) Math.log10(projectPaths.size())) + 1;
+        int scoreFactor = (int) Math.pow(10, projectScale);
+        log("projectScale: %d, scoreFactor: %d", projectScale, scoreFactor);
+
+        List<MainClassInfo> totalMains = new ArrayList<>();
+        int i = 0;
         for (File path : projectPaths) {
-            MainClassInfo main = findMainClass(path, namePattern);
-            if (main != null) {
-                log("found: %s", main);
-                return main;
-            }
+            List<MainClassInfo> main = findMainClass(path, namePattern);
+            //score by project order
+            int fi = i;
+            main = main.stream()
+                    .map(m -> m.withScore(m.getScore() * scoreFactor + fi))
+                    .collect(Collectors.toList());
+            totalMains.addAll(main);
+            ++i;
         }
-        return null;
+        totalMains.sort(
+                Comparator.comparingInt(MainClassInfo::getScore)
+                        .reversed());
+        totalMains.forEach(m -> log("sorted %s", m));
+        return totalMains.isEmpty() ? null : totalMains.get(0);
     }
 
     public static class MainClassInfo {
-        protected File projectPath;
+        protected File path;
         protected String name;
+        protected int score;
 
-        public MainClassInfo(File projectPath, String name) {
-            this.projectPath = projectPath;
+        public MainClassInfo(File path, String name, int score) {
+            this.path = path;
             this.name = name;
+            this.score = score;
         }
 
-        public File getProjectPath() {
-            return projectPath;
+        public File getPath() {
+            return path;
         }
 
         public String getName() {
             return name;
         }
 
+        public int getScore() {
+            return score;
+        }
+
+        public MainClassInfo withPath(File path) {
+            return new MainClassInfo(path, name, score);
+        }
+
+        public MainClassInfo withScore(int score) {
+            return new MainClassInfo(path, name, score);
+        }
+
         @Override
         public String toString() {
             return "MainClassInfo{" +
-                    "projectPath=" + projectPath +
+                    "path=" + path +
                     ", name='" + name + '\'' +
+                    ", score=" + score +
                     '}';
         }
     }
@@ -327,6 +385,7 @@ public class MavenExecJava {
                 try (Stream<Path> paths = findClassFromClassesDir(dir)) {
                     paths.map(p -> matchClass(p, null))
                             .filter(Objects::nonNull)
+                            .map(MainClassInfo::getName)
                             .forEach(System.out::println);
                 } catch (Exception ex) {
                     throw new RuntimeException(ex);
@@ -335,17 +394,13 @@ public class MavenExecJava {
         }
     }
 
-    public MainClassInfo findMainClass(File projectDir, Pattern namePattern) {
-        for (File dir : getClassesDirectories(projectDir)) {
-            if (dir.isDirectory()) {
-                String mainName = findMainClassFromClassesDir(dir, namePattern);
-                if (mainName != null) {
-                    log("found %s from %s", mainName, dir);
-                    return new MainClassInfo(projectDir, mainName);
-                }
-            }
-        }
-        return null;
+    public List<MainClassInfo> findMainClass(File projectDir, Pattern namePattern) {
+        return getClassesDirectories(projectDir).stream()
+                .filter(File::isDirectory)
+                .map(dir -> findMainClassFromClassesDir(dir, namePattern))
+                .flatMap(l -> l.stream()
+                            .map(main -> main.withPath(projectDir)))
+                .collect(Collectors.toList());
     }
 
     public List<File> getClassesDirectories(File projectDir) {
@@ -385,7 +440,11 @@ public class MavenExecJava {
     }
 
     public void compileProject(File projectDir) {
-        ProcessShell.get("mvn", "compile")
+        List<String> command = new ArrayList<>();
+        command.add("mvn");
+        command.addAll(mvnOptions);
+        command.add("compile");
+        ProcessShell.get(command)
                 .set(p -> {
                     p.directory(projectDir);
                     p.environment().put("MAVEN_OPTS", "-Dorg.slf4j.simpleLogger.defaultLogLevel=error");
@@ -394,12 +453,11 @@ public class MavenExecJava {
                 .echo().runToReturnCode();
     }
 
-    public String findMainClassFromClassesDir(File classesDir, Pattern namePattern) {
+    public List<MainClassInfo> findMainClassFromClassesDir(File classesDir, Pattern namePattern) {
         try (Stream<Path> paths = findClassFromClassesDir(classesDir)) {
             return paths.map(p -> matchClass(p, namePattern))
                     .filter(Objects::nonNull)
-                    .findFirst()
-                    .orElse(null);
+                    .collect(Collectors.toList());
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
@@ -411,9 +469,15 @@ public class MavenExecJava {
                 .filter(p -> p.getFileName().toString().endsWith(".class"));
     }
 
-    public String matchClass(Path classFile, Pattern namePattern) {
+    public MainClassInfo matchClass(Path classFile, Pattern namePattern) {
         try {
-            return new MainFinder(namePattern).matchClass(classFile);
+            MainFinder finder = new MainFinder(namePattern);
+            String name = finder.matchClass(classFile);
+            if (name != null) {
+                return new MainClassInfo(classFile.toFile(), name, finder.getNameMatchedScore());
+            } else {
+                return null;
+            }
         } catch (Exception ex) {
             System.err.println("matchClass: " + classFile + " : " + ex);
             ex.printStackTrace();
@@ -439,6 +503,7 @@ public class MavenExecJava {
     public List<String> getMavenCommand(String mainClass, List<String> args) {
         List<String> command = new ArrayList<>();
         command.add("mvn");
+        command.addAll(mvnOptions);
         command.add("exec:java");
         command.add("-Dexec.classpathScope=test");
         command.add("-Dexec.mainClass=" + mainClass);

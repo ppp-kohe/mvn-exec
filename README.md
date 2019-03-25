@@ -65,7 +65,7 @@ The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugi
      -Dexec.args="-f -l -p"
 ```
 
-* Also, `-e` can launch command line same as regular execution other than not showing the `> mvn exec:java ...` line to the standard error.
+* Also, `-r` can launch command line same as regular execution other than not showing the `> mvn exec:java ...` line to the standard error.
 
 ### Comiling the target project before execution
 
@@ -132,3 +132,4 @@ Thus, if you launch a program compiled in Java 11 by the tool under Java 8,
 then JVM causes `UnsupportedClassVersionError` but the tool silently exits.
 
 * `-w` show WARNING and ERROR messages caused by maven execution including JVM failures, realized by `-Dorg.slf4j.simpleLogger.defaultLogLevel=warn`.
+
