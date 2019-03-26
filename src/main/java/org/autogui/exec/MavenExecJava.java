@@ -320,7 +320,7 @@ public class MavenExecJava {
         for (File path : projectPaths) {
             List<MainClassInfo> main = findMainClass(path, namePattern);
             //score by project order
-            int fi = i;
+            int fi = projectPaths.size() - i;
             main = main.stream()
                     .map(m -> m.withScore(m.getScore() * scoreFactor + fi))
                     .collect(Collectors.toList());
