@@ -279,7 +279,7 @@ public class MavenExecJava {
                 "     <mainClass>        :  fully qualified name or sub-sequence of characters.\n" +
                 "                           In the latter case, \"Abc\" becomes the pattern \"A.*?[bB].*?[cC]\".\n" +
                 "     -p  | --project <path>      :  add a maven project directory. repeatable. later items have high precedence.\n" +
-                "     -pr | --projectReset <path> :  clear existing project directories and add a directory." +
+                "     -pr | --projectReset <path> :  clear existing project directories and add a directory.\n" +
                 "     -f  | --find       :  show the matched main-class name.\n" +
                 "     -l  | --list       :  show list of main-classes.\n" +
                 "     -g  | --get        :  show the command line.\n" +

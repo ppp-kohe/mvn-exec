@@ -8,6 +8,10 @@ import org.objectweb.asm.Opcodes;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -76,6 +80,20 @@ public class MainFinder extends ClassVisitor {
         }
     }
 
+    /**
+     *
+     * @param name the tested string, no "$" or "/".
+     * @param pattern  the matching pattern for entire name
+     * @return 0 if the pattern did not matched to the entire name.
+     *        if matched, then calculate score by matched groups.
+     *         A group in the pattern
+     *          1) matches a sub-sequence of an upper-case letter, then +4,
+     *                e.g. "Hello": +4, or
+     *          2) continuously matches a sub-sequence chars of the previous matched group, then +2,
+     *                e.g. <code>".*?([Hh])[^.]*?([Ee])"</code> matches "(He)llo" +2.
+     *          3) otherwise, +1.
+     *        Also, add coverage-rate of camel-case words, up to +4 by {@link #scoreGroupCoverage(String, Matcher)}.
+     */
     public static int match(String name, Pattern pattern) {
         Matcher m = pattern.matcher(name);
         if (m.matches()) {
@@ -93,6 +111,7 @@ public class MainFinder extends ClassVisitor {
                 }
                 prevStart = pos;
             }
+            score += scoreGroupCoverage(name, m);
             return Math.max(1, score);
         } else {
             return 0;
@@ -124,6 +143,51 @@ public class MainFinder extends ClassVisitor {
         }
     }
 
+    static Pattern wordPattern = Pattern.compile("([A-Z][a-z]*)|([0-9]+)");
+
+    /**
+     *
+     * @param name the tested string, no "$" or "/".
+     * @param m entirely matching state.
+     * @return if m.matches() returns false, then 0.
+     *          otherwise, calculate group coverage by camel-case words;
+     *             the words are matching ranges of the pattern <code>[A-Z][a-z]*|[0-9]+</code> to
+     *                the last component of the name divided by ".".
+     *              The score becomes
+     *                 the size of the set of the matching words / the number of words of the last name,
+     *                   as int.
+     */
+    public static int scoreGroupCoverage(String name, Matcher m) {
+        if (m.matches()) {
+            int lastDotNext = name.lastIndexOf('.') + 1;
+            String clsName = name.substring(lastDotNext);
+            Matcher wm = wordPattern.matcher(clsName);
+            List<int[]> wordRanges = new ArrayList<>(); //{groupIndex, start, endExclusive}
+            int g = 0;
+            while (wm.find()) {
+                wordRanges.add(new int[] {g, wm.start(0), wm.end(0)});
+                ++g;
+            }
+            Set<Integer> found = new HashSet<>();
+            for (int i = 0; i < m.groupCount(); ++i) {
+                int gs = m.start(0);
+                int fg = wordRanges.stream()
+                        .filter(r -> r[1] <= gs && gs < r[2])
+                        .findFirst()
+                        .map(r -> r[0])
+                        .orElse(-1);
+                found.add(fg);
+            }
+            int matchedGroups = found.size();
+            int totalGroups = wordRanges.size();
+            return (int) (((double) matchedGroups / (double) totalGroups) * 4.0);
+        } else {
+            return 0;
+        }
+    }
+
+
+
     public Pattern getNamePattern() {
         return namePattern;
     }
@@ -132,7 +196,7 @@ public class MainFinder extends ClassVisitor {
      * If <i>str</i> contains ".", it regards as a sub-sequence of qualified name.
      *  The pattern becomes
      * <pre>
-     *     ".*?" + quote(<i>str</i>)
+     *     ".*?(" + quote(<i>str</i>) + ")"
      * </pre>
      * Otherwise, it regards as prefix letters of CamelCase class name (excluding package names).
      *  The pattern becomes
@@ -152,7 +216,9 @@ public class MainFinder extends ClassVisitor {
         StringBuilder buf = new StringBuilder();
         buf.append(".*?");
         if (str.contains(".")) {
+            buf.append("(");
             buf.append(Pattern.quote(str));
+            buf.append(")");
         } else {
             for (char c : str.toCharArray()) {
                 char upper = Character.toUpperCase(c);
