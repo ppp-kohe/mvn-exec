@@ -9,8 +9,8 @@ The project uses [apache-maven](http://maven.apache.org) and depends on Java 8 o
 Add the script `mvn-exec` to your `PATH` and execute the script.
 The script will automatically compile the project with Maven.
 
-You can also build the utility with `mvn compile package assembly:single` 
-and then you can execute `java -jar target/mvn-exec-1.1-jar-with-dependency.jar`
+You can also build the utility with `mvn compile package ` 
+and then you can execute `java -jar target/mvn-exec-1.4.jar`
 
 ## Usage
 
@@ -26,9 +26,10 @@ e.g. suppose `my-maven-project` contains `my.pack.MyMainClass` as an executable 
 The script launch the class via the following command line:
 
 ```bash
-  > mvn exec:java -Dexec.classpathScope=test \
-     -Dexec.mainClass=my.pack.MyMainClass \
-     -Dexec.args="arg1 arg2 arg3"
+  > mvn exec:exec -Dexec.classpathScope=test \
+     -Dexec.executable=java \
+     -Dexec.workingdir=your/current/path/. \
+     -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass arg1 arg2 arg3"
 ```
 
 The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugin/) for launching a class.
@@ -37,7 +38,7 @@ The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugi
 
 ```bash
   % mvn-exec -p path/to/my-maven-project -g MyMainClass 
-  mvn exec:java -Dexec.classpathScope=test -Dexec.mainClass=my.pack.MyMainClass 
+  mvn exec:exec -Dexec.classpathScope=test -Dexec.executable=java -Dexec.workingdir=your/current/path/. -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass"
 ```
 
 * `-f` can find the specified class-name and show the qualified name
@@ -60,12 +61,13 @@ The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugi
 
 ```bash
   % mvn-exec -p path/to/my-maven-project MyMainClass -- -f -l -p 
-  > mvn exec:java -Dexec.classpathScope=test \
-     -Dexec.mainClass=my.pack.MyMainClass \
-     -Dexec.args="-f -l -p"
+  > mvn exec:exec -Dexec.classpathScope=test \
+     -Dexec.executable=java \
+     -Dexec.workingdir=your/current/path/. \
+     -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass -f -l -p"
 ```
 
-* Also, `-r` can launch command line same as regular execution other than not showing the `> mvn exec:java ...` line to the standard error.
+* Also, `-r` can launch command line same as regular execution other than not showing the `> mvn exec:exec ...` line to the standard error.
 
 ### Comiling the target project before execution
 
@@ -74,18 +76,36 @@ The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugi
 ```bash
   % mvn-exec -p path/to/my-maven-project -c MyMainClass arg1 arg2 arg3
   > mvn compile
-  > mvn exec:java -Dexec.classpathScope=test \
-    -Dexec.mainClass=my.pack.MyMainClass \
-    -Dexec.args="arg1 arg2 arg3"
+  > mvn exec:exec -Dexec.classpathScope=test \
+    -Dexec.executable=java \
+    -Dexec.workingdir=your/current/path/. \
+    -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass arg1 arg2 arg3"
 ```
 
-If the project directory do not have `target/classes` sub-directory, 
+If the project directory does not have `target/classes` sub-directory, 
 then the tool also runs `mvn compile`.
 
 * `-sac` suppresses the automatic comilation for creating `target/classes`.
 
 
-### Relative path issue
+### Class name completion 
+
+The tool searches main classes of a target project thanks to [ASM](https://asm.ow2.io). 
+
+You can specify a main class by a fully qualified name or a sub-sequence of characters.
+In the latter case, `Abc` becomes the pattern `A.*?[bB].*?[cC]`.
+
+e.g. `my.pack.MyMainClass` can be specifyed by `mmc`, `MMC`, `Mmc`, `MyMaCl` and so on.
+
+Sometimes, a longer name is selected. e.g.  `MyMainClass` selects `my.pack.MyMainClassTest` instead of `my.pack.MyMainClass`. 
+For selecting the shorter name,  use dot prefix like  `.MyMainClass`.
+
+### Relative path issue (for exec:java)
+
+By default, the tool launches program by `mvn exec:exec -Dexec.executable=java ...`. 
+The option `--execJava` can switch to `exec:java`. 
+The `exec:exec` launches a new  JVM process for program. 
+On the other hand, the `exec:java` runs the program in the same proecess of Maven.
 
 `mvn exec:java` seems to be designed for executing under the project directory of current working directory.
 So, the launched class cannot handle relative paths of the working directory launching the `mvn-exec` script.
@@ -105,18 +125,7 @@ i.e. `existing/nonExisting` will be completed as `/path/to/existing/nonExisting`
 
 In Windows, `/` becomes `\` and `:` becoms `;`.
 
-Note: `mvn exec:java` cannot change the working directory other than the target project dir.
-   Thus, we need to provide the absolute path for an outer path of the project
-    as arguments for the executed program.
-
-### Class name completion 
-
-The tool searches main classes of a target project thanks to [ASM](https://asm.ow2.io). 
-
-You can specify a main class by a fully qualified name or a sub-sequence of characters.
-In the latter case, `Abc` becomes the pattern `A.*?[bB].*?[cC]`.
-
-e.g. `my.pack.MyMainClass` can be specifyed by `mmc`, `MMC`, `Mmc`, `MyMaCl` and so on.
+Note: `mvn exec:java` cannot change the working directory other than the target project dir. Thus, we need to provide the absolute path for an outer path of the project as arguments for the executed program.
 
 ### Showing errors
 

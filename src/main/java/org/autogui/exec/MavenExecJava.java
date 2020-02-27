@@ -35,6 +35,8 @@ public class MavenExecJava {
     public static String MAVEN_EXEC_DEBUG = "org.autogui.exec.debug";
 
     protected List<String> mvnOptions = new ArrayList<>();
+    protected List<String> jvmOptions = new ArrayList<>();
+    protected boolean execExec = true;
 
     public enum ExecMode {
         Execute,
@@ -220,6 +222,10 @@ public class MavenExecJava {
                     mvnOptions.add("-X");
                     logLevel = "warn";
                     setDebug();
+                } else if (arg.equals("--execJava")) {
+                    execExec = false;
+                } else if (arg.startsWith("-J")) {
+                    jvmOptions.add(arg.substring(2));
                 } else if (arg.equals("--")) {
                     argsPart = true;
                 } else {
@@ -285,6 +291,7 @@ public class MavenExecJava {
                 "     -g  | --get        :  show the command line.\n" +
                 "     -r  | --run        :  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
                 "     -c  | --compile    :  \"mvn compile\" before execution.\n" +
+                "           --execJava   :  use \"exec:java\" instead of \"exec:exec\". it enables completion of relative path.\n" +
                 "     -sac| --suppressAutoCompile :  suppress checking target directory and executing \"mvn compile\".\n" +
                 "     -sc | --suppressComplete    :  suppress completion of relative path for arguments.\n" +
                 "                 Default completion behavior recognize the following patterns as relative path:\n" +
@@ -299,9 +306,10 @@ public class MavenExecJava {
                 "                    as arguments for the executed program. \n" +
                 "     -w  | --logWarn    :  set the log-level to \"warn\", meaning \"-Dorg.slf4j.simpleLogger.defaultLogLevel=warn\" instead of \"error\". \n" +
                 "     -e                 :  -w and pass -e to maven to show errors.\n" +
+                "     -J<opt>            :  pass opt to JVM. e.g. -J-Xmx=10g \n" +
                 "     --logOff           :  set the log-level to \"off\".\n" +
                 "     -D<name>[=<value>] :  set a system-property. repeatable.\n" +
-                "     --debug            :  show debugging messages." +
+                "     --debug            :  show debugging messages.\n" +
                 "     -X                 :  --debug and pass -X to mvn.\n" +
                 "     --                 :  indicate the start of mainClass and/or arguments.s\n";
         System.out.println(helpMessage);
@@ -487,7 +495,7 @@ public class MavenExecJava {
 
     public ProcessShell<?> getCommand(File projectPath, String mainClass, List<String> args) {
         Instant commandCreationTime = Instant.now();
-        return ProcessShell.get(getMavenCommand(mainClass, args))
+        return ProcessShell.get(execExec ? getMavenCommandExec(mainClass, args) : getMavenCommandExecJava(mainClass, args))
                 .set(p -> {
                     p.directory(projectPath);
                     String mavenOpts = getMavenOpts();
@@ -500,7 +508,54 @@ public class MavenExecJava {
                 .setRedirectToInherit();
     }
 
-    public List<String> getMavenCommand(String mainClass, List<String> args) {
+    public List<String> getMavenCommandExec(String mainClass, List<String> args) {
+        List<String> command = new ArrayList<>();
+        command.add("mvn");
+        command.addAll(mvnOptions);
+        command.add("exec:exec");
+        command.add("-Dexec.classpathScope=test");
+        command.add("-Dexec.executable=java");
+        command.add("-Dexec.workingdir=" + new File(".").getAbsolutePath());
+        command.add("-Dexec.args=" + getCommandArgumentsForExec(mainClass, args));
+        propertySettings.stream()
+                .map(this::getPropertySetting)
+                .forEach(command::add);
+        return command;
+    }
+
+    public String getCommandArgumentsForExec(String mainClass, List<String> args) {
+        String cp = "-cp %classpath"; //-cp %classpath
+        String mp = "-p %modulepath"; //-p %modulepath
+        try {
+            if (Integer.parseInt(System.getProperty("java.version", "0").split(".")[0]) < 9) { //1.8...
+                mp = ""; //no module path
+            }
+        } catch (Exception ex) {
+            log("version error: java.version=%s : %s", System.getProperty("java.version"), ex);
+        }
+        String jvmOpts = jvmOptions.stream()
+                .map(this::getCommandArgumentWithoutCompletion)
+                .collect(Collectors.joining(" "));
+
+        String argStr = args.stream()
+                .map(this::getCommandArgumentWithoutCompletion)
+                .collect(Collectors.joining(" "));
+        return String.join(" ", jvmOpts, cp, mp, mainClass, argStr);
+    }
+
+    public String getCommandArgumentWithoutCompletion(String arg) {
+        if (arg.contains(" ")) {
+            if (!arg.contains("'")) {
+                return "'" + arg + "'";
+            } else {
+                return "\"" + arg + "\"";
+            }
+        } else {
+            return arg;
+        }
+    }
+
+    public List<String> getMavenCommandExecJava(String mainClass, List<String> args) {
         List<String> command = new ArrayList<>();
         command.add("mvn");
         command.addAll(mvnOptions);
@@ -533,6 +588,12 @@ public class MavenExecJava {
         }
         if (!opts.contains(MAVEN_OPTS_LOG_LEVEL)) {
             opts += " " + MAVEN_OPTS_LOG_LEVEL + logLevel;
+        }
+        if (!execExec) { //for exec:java
+            String jvmOpts = jvmOptions.stream()
+                    .map(this::getCommandArgument)
+                    .collect(Collectors.joining(" "));
+            opts += " " + jvmOpts;
         }
         return opts;
     }
