@@ -25,7 +25,7 @@ public class MavenExecJava {
     protected List<Map.Entry<String,String>> propertySettings = new ArrayList<>();
     protected LinkedHashSet<ExecMode> modes = new LinkedHashSet<>();
     protected boolean compile;
-    protected boolean completeWorkingDirectory = true;
+    protected boolean completeWorkingDirectory = false;
     protected boolean autoCompile = true;
     protected String logLevel = "error";
 
@@ -37,6 +37,7 @@ public class MavenExecJava {
     protected List<String> mvnOptions = new ArrayList<>();
     protected List<String> jvmOptions = new ArrayList<>();
     protected boolean execExec = true;
+    protected String mvnCommand;
 
     public enum ExecMode {
         Execute,
@@ -206,6 +207,8 @@ public class MavenExecJava {
                     autoCompile = false;
                 } else if (arg.equals("-sc") || arg.equals("--suppressComplete")) {
                     completeWorkingDirectory = false;
+                } else if (arg.equals("--complete")) {
+                    completeWorkingDirectory = true;
                 } else if (arg.equals("-w") || arg.equals("--logWarn")) {
                     logLevel = "warn";
                 } else if (arg.equals("--logOff")) {
@@ -224,8 +227,12 @@ public class MavenExecJava {
                     setDebug();
                 } else if (arg.equals("--execJava")) {
                     execExec = false;
+                    completeWorkingDirectory = true;
                 } else if (arg.startsWith("-J")) {
                     jvmOptions.add(arg.substring(2));
+                } else if (arg.equals("--mvn")) {
+                    ++i;
+                    mvnCommand = args[i];
                 } else if (arg.equals("--")) {
                     argsPart = true;
                 } else {
@@ -291,9 +298,11 @@ public class MavenExecJava {
                 "     -g  | --get        :  show the command line.\n" +
                 "     -r  | --run        :  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
                 "     -c  | --compile    :  \"mvn compile\" before execution.\n" +
-                "           --execJava   :  use \"exec:java\" instead of \"exec:exec\". it enables completion of relative path.\n" +
+                "     --execJava         :  use \"exec:java\" instead of \"exec:exec\". it enables completion of relative path.\n" +
                 "     -sac| --suppressAutoCompile :  suppress checking target directory and executing \"mvn compile\".\n" +
+                "     --complete                  :  turn on completion of relative path for arguments.\n" +
                 "     -sc | --suppressComplete    :  suppress completion of relative path for arguments.\n" +
+                "                 The completion is enabled by --execJava. The subsequent -sc can disables the completion. \n" +
                 "                 Default completion behavior recognize the following patterns as relative path:\n" +
                 "                  1. a relative path: <p1>\n" +
                 "                  2. a path list: <p1>" + ps + "<p2>...\n" +
@@ -311,6 +320,7 @@ public class MavenExecJava {
                 "     -D<name>[=<value>] :  set a system-property. repeatable.\n" +
                 "     --debug            :  show debugging messages.\n" +
                 "     -X                 :  --debug and pass -X to mvn.\n" +
+                "     --mvn <mvnCommand> :  set the command name of maven. the default is \"mvn\" or \"mvn.cmd\" for Windows.\n" +
                 "     --                 :  indicate the start of mainClass and/or arguments.s\n";
         System.out.println(helpMessage);
     }
@@ -449,7 +459,7 @@ public class MavenExecJava {
 
     public void compileProject(File projectDir) {
         List<String> command = new ArrayList<>();
-        command.add("mvn");
+        command.add(getMavenCommandName());
         command.addAll(mvnOptions);
         command.add("compile");
         ProcessShell.get(command)
@@ -508,9 +518,20 @@ public class MavenExecJava {
                 .setRedirectToInherit();
     }
 
+    public String getMavenCommandName() {
+        if (mvnCommand == null) {
+            if (System.getProperty("os.name", "").contains("Windows")) {
+                mvnCommand = "mvn.cmd";
+            } else {
+                mvnCommand = "mvn";
+            }
+        }
+        return mvnCommand;
+    }
+
     public List<String> getMavenCommandExec(String mainClass, List<String> args) {
         List<String> command = new ArrayList<>();
-        command.add("mvn");
+        command.add(getMavenCommandName());
         command.addAll(mvnOptions);
         command.add("exec:exec");
         command.add("-Dexec.classpathScope=test");
@@ -557,7 +578,7 @@ public class MavenExecJava {
 
     public List<String> getMavenCommandExecJava(String mainClass, List<String> args) {
         List<String> command = new ArrayList<>();
-        command.add("mvn");
+        command.add(getMavenCommandName());
         command.addAll(mvnOptions);
         command.add("exec:java");
         command.add("-Dexec.classpathScope=test");
