@@ -170,7 +170,7 @@ public class MainFinder extends ClassVisitor {
             }
             Set<Integer> found = new HashSet<>();
             for (int i = 0; i < m.groupCount(); ++i) {
-                int gs = m.start(0);
+                int gs = m.start(i);
                 int fg = wordRanges.stream()
                         .filter(r -> r[1] <= gs && gs < r[2])
                         .findFirst()
