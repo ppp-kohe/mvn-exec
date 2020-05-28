@@ -169,8 +169,8 @@ public class MainFinder extends ClassVisitor {
                 ++g;
             }
             Set<Integer> found = new HashSet<>();
-            for (int i = 0; i < m.groupCount(); ++i) {
-                int gs = m.start(i);
+            for (int i = 1; i < m.groupCount(); ++i) { //group starts from 1
+                int gs = m.start(i) - lastDotNext; //a returned index starts from the package name
                 int fg = wordRanges.stream()
                         .filter(r -> r[1] <= gs && gs < r[2])
                         .findFirst()
