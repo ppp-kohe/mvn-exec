@@ -1,7 +1,6 @@
 package org.autogui.exec;
 
 import java.io.*;
-import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -10,6 +9,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
@@ -246,7 +246,7 @@ public class ProcessShell<OutType> {
         try {
             Process p = builder.start();
             if (inputProcess != null) {
-                new Thread(() -> processInput(p)).start();
+                executeTask(() -> processInput(p));
             }
             return p;
         } catch (Exception ex) {
@@ -254,25 +254,59 @@ public class ProcessShell<OutType> {
         }
     }
 
+    public CompletableFuture<OutType> startOutput() {
+        return startDestinationThread(start());
+    }
+
+    public CompletableFuture<List<String>> startToLines() {
+        ProcessShell<List<String>> lines = setOutputLines();
+        Process p = lines.start();
+        CompletableFuture<List<String>> retLines = lines.startDestinationThread(p);
+        lines.startWaitForThread(p);
+        return retLines;
+    }
+
+    public CompletableFuture<Integer> startToReturnCode() {
+        Process p = start();
+        startDestinationThread(p);
+        return startWaitForThread(p);
+    }
+
+    protected CompletableFuture<Integer> startWaitForThread(Process p) {
+        CompletableFuture<Integer> retCode = new CompletableFuture<>();
+        executeTask(() -> {
+            try {
+                retCode.complete(p.waitFor());
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+        return retCode;
+    }
+
 
     public OutType startAndGet() {
         Process p = start();
         try {
-            ArrayBlockingQueue<OutType> dest = startDestinationThread(p);
+            CompletableFuture<OutType> dest = startDestinationThread(p);
             p.waitFor();
 
-            return dest.take();
+            return dest.get();
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    protected ArrayBlockingQueue<OutType> startDestinationThread(Process p) {
-        ArrayBlockingQueue<OutType> dest = new ArrayBlockingQueue<>(1);
+    protected CompletableFuture<OutType> startDestinationThread(Process p) {
+        CompletableFuture<OutType> dest = new CompletableFuture<>();
         if (outputProcess != null) {
-            new Thread(() -> processOutput(p, dest::add)).start();
+            executeTask(() -> processOutput(p, dest::complete));
         }
         return dest;
+    }
+
+    protected void executeTask(Runnable r) {
+        new Thread(r).start();
     }
 
     public OutType startAndGet(long timeout, TimeUnit unit) {
@@ -322,7 +356,7 @@ public class ProcessShell<OutType> {
     public OutType startAndGet(long timeout, ChronoUnit unit) {
         Process p = start();
         try {
-            ArrayBlockingQueue<OutType> dest = startDestinationThread(p);
+            CompletableFuture<OutType> dest = startDestinationThread(p);
             Instant time = Instant.now();
             waitFor(p, timeout, unit);
             Duration elapsed = Duration.between(time, Instant.now());
@@ -332,18 +366,18 @@ public class ProcessShell<OutType> {
                     .minus(elapsed);
 
             if (remaining.isNegative() || remaining.isZero()) {
-                if (dest.isEmpty()) {
+                if (dest.isDone()) {
                     throw new TimeoutException();
                 }
-                return dest.peek();
+                return dest.getNow(null);
             } else {
                 long secs = remaining.getSeconds();
                 if (secs == 0) {
-                    return dest.poll(remaining.getNano(), TimeUnit.NANOSECONDS);
+                    return dest.get(remaining.getNano(), TimeUnit.NANOSECONDS);
                 } else if (secs >= 1000) {
-                    return dest.poll(secs, TimeUnit.SECONDS);
+                    return dest.get(secs, TimeUnit.SECONDS);
                 } else {
-                    return dest.poll(secs * 1000L +
+                    return dest.get(secs * 1000L +
                             remaining.getNano() / 1000_000L, TimeUnit.MILLISECONDS);
                 }
             }
