@@ -137,7 +137,7 @@ public class MavenExecJava {
             if (main == null) {
                 throw new NoSuchMainClassException(mainClass);
             }
-            ProcessShell sh = getCommand(main.getPath(), main.getName(), arguments);
+            ProcessShell<?> sh = getCommand(main.getPath(), main.getName(), arguments);
             log("command %s", sh);
             if (def) {
                 sh.echo();
@@ -152,7 +152,7 @@ public class MavenExecJava {
             if (main == null) {
                 throw new NoSuchMainClassException(mainClass);
             }
-            ProcessShell sh = getCommand(main.getPath(), main.getName(), arguments);
+            ProcessShell<?> sh = getCommand(main.getPath(), main.getName(), arguments);
             System.out.println(sh.getEchoString());
         }
     }
@@ -548,7 +548,7 @@ public class MavenExecJava {
         String cp = "-cp %classpath"; //-cp %classpath
         String mp = "-p %modulepath"; //-p %modulepath
         try {
-            if (Integer.parseInt(System.getProperty("java.version", "0").split(".")[0]) < 9) { //1.8...
+            if (Integer.parseInt(System.getProperty("java.version", "0").split("\\.")[0]) < 9) { //1.8...
                 mp = ""; //no module path
             }
         } catch (Exception ex) {
@@ -631,7 +631,7 @@ public class MavenExecJava {
             arg = getCompletedPath(arg);
         }
         if (arg.contains(" ")) {
-            if (!arg.contains("\'")) {
+            if (!arg.contains("'")) {
                 return "'" + arg + "'";
             } else {
                 return "\"" + arg + "\"";

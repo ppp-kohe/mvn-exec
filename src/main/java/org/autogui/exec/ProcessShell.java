@@ -1,14 +1,17 @@
 package org.autogui.exec;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -64,9 +67,15 @@ public class ProcessShell<OutType> {
 
     protected ProcessBuilder builder = new ProcessBuilder();
     protected Processor<Process> inputProcess;
+    protected Processor<Process> errorProcess;
     protected Charset encoding = StandardCharsets.UTF_8;
+    protected List<Processor<Process>> processors = new ArrayList<>();
 
     protected ProcessorForOutput<OutType> outputProcess;
+    protected List<Thread> executedThreads = Collections.synchronizedList(new ArrayList<>());
+    protected List<CompletableFuture<?>> executedThreadsWaits = Collections.synchronizedList(new ArrayList<>());
+
+    protected boolean waitThreads = true;
 
     public static ProcessShell<?> get(String... command) {
         return new ProcessShell<>()
@@ -126,6 +135,7 @@ public class ProcessShell<OutType> {
         return before + getEchoString() + after;
     }
 
+
     ///////////////////
 
     public ProcessShell<OutType> setInputLines(Iterable<String> lines) {
@@ -152,6 +162,16 @@ public class ProcessShell<OutType> {
         });
     }
 
+    public ProcessShell<OutType> setInputFile(Path inputFile) {
+        return setInput(p -> {
+            try (InputStream input = new BufferedInputStream(
+                    Files.newInputStream(inputFile));
+                 OutputStream out = p.getOutputStream()) {
+                transfer(input, out);
+            }
+        });
+    }
+
     public ProcessShell<OutType> setInputStream(InputStream input) {
         return setInput(p -> {
             try (OutputStream out = p.getOutputStream()) {
@@ -162,7 +182,7 @@ public class ProcessShell<OutType> {
         });
     }
 
-    private void transfer(InputStream input, OutputStream out) throws IOException {
+    public void transfer(InputStream input, OutputStream out) throws IOException {
         byte[] buffer = new byte[8192];
         while (true) {
             int len = input.read(buffer);
@@ -204,12 +224,36 @@ public class ProcessShell<OutType> {
             });
     }
 
+    public ProcessShell<String> setOutputString() {
+        return setOutput((p, target) -> {
+            try (InputStream in = p.getInputStream()) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                transfer(in, out);
+                target.accept(StandardCharsets.UTF_8.decode(
+                        ByteBuffer.wrap(out.toByteArray()))
+                        .toString());
+            }
+        });
+    }
+
     public ProcessShell<byte[]> setOutputBytes() {
         return setOutput((p, target) -> {
             try (InputStream in = p.getInputStream()) {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 transfer(in, out);
                 target.accept(out.toByteArray());
+            }
+        });
+    }
+
+    public ProcessShell<Path> setOutputFile(Path outFile) {
+        return setOutput((p, dest) -> {
+            try (InputStream in = p.getInputStream();
+                OutputStream out = new BufferedOutputStream(
+                        Files.newOutputStream(outFile))) {
+                transfer(in, out);
+            } finally {
+                dest.accept(outFile);
             }
         });
     }
@@ -240,14 +284,93 @@ public class ProcessShell<OutType> {
         return newThis;
     }
 
+    @SuppressWarnings("unchecked")
+    public <NewOutType> ProcessShell<NewOutType> setErrorAsOutput(ProcessorForOutput<NewOutType> outputProcess) {
+        ProcessShell<NewOutType> newThis = (ProcessShell<NewOutType>) this;
+        newThis.outputProcess = outputProcess;
+        newThis.builder.redirectError(ProcessBuilder.Redirect.PIPE);
+        return newThis;
+    }
+
+    ///////////////////
+
+    public ProcessShell<OutType> setErrorFile(Path errorFile) {
+        return setError((p) -> {
+            try (OutputStream out = new BufferedOutputStream(
+                    Files.newOutputStream(errorFile));
+                InputStream in = p.getErrorStream()) {
+                transfer(in, out);
+            }
+        });
+    }
+
+    public ProcessShell<OutType> setErrorLines(Consumer<Iterable<String>> lines) {
+        return setError(p -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(p.getInputStream(), encoding))) {
+                List<String> list = new ArrayList<>();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    list.add(line);
+                }
+                lines.accept(list);
+            }
+        });
+    }
+
+    public ProcessShell<OutType> setErrorString(Consumer<String> r) {
+        return setErrorBytes(out ->
+            r.accept(StandardCharsets.UTF_8.decode(
+                    ByteBuffer.wrap(out))
+                    .toString()));
+    }
+
+    public ProcessShell<OutType> setErrorBytes(Consumer<byte[]> r) {
+        return setError((p) -> {
+            try (ByteArrayOutputStream out = new ByteArrayOutputStream();
+                 InputStream in = p.getErrorStream()) {
+                transfer(in, out);
+                r.accept(out.toByteArray());
+            }
+        });
+    }
+
+    public ProcessShell<OutType> setErrorStream(OutputStream out) {
+        return setError((p) -> {
+            try (InputStream in = p.getErrorStream()) {
+                transfer(in, out);
+            } finally {
+                out.close();
+            }
+        });
+    }
+
+    public ProcessShell<OutType> setError(Processor<Process> p) {
+        errorProcess = p;
+        builder.redirectError(ProcessBuilder.Redirect.PIPE);
+        return this;
+    }
+
+    ///////////////////
+
+    public ProcessShell<OutType> addProcessor(Processor<Process> p) {
+        processors.add(p);
+        return this;
+    }
+
     ///////////////////
 
     public Process start() {
         try {
             Process p = builder.start();
             if (inputProcess != null) {
-                executeTask(() -> processInput(p));
+                executeTask(true, () -> processInput(p));
             }
+            if (errorProcess != null) {
+                executeTask(true, () -> processError(p));
+            }
+            processors.forEach(prc ->
+                    executeTask(true, () -> processProcessor(p, prc)));
             return p;
         } catch (Exception ex) {
             throw new RuntimeException(ex);
@@ -262,23 +385,56 @@ public class ProcessShell<OutType> {
         ProcessShell<List<String>> lines = setOutputLines();
         Process p = lines.start();
         CompletableFuture<List<String>> retLines = lines.startDestinationThread(p);
-        lines.startWaitForThread(p);
+        try {
+            p.waitFor();
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
         return retLines;
     }
 
+    public CompletableFuture<String> startToString() {
+        ProcessShell<String> lines = setOutputString();
+        Process p = lines.start();
+        CompletableFuture<String> retLines = lines.startDestinationThread(p);
+        try {
+            p.waitFor();
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+        return retLines;
+    }
+
+    public CompletableFuture<byte[]> startToBytes() {
+        ProcessShell<byte[]> bs = setOutputBytes();
+        Process p = bs.start();
+        CompletableFuture<byte[]> retBs = bs.startDestinationThread(p);
+        try {
+            p.waitFor();
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+        return retBs;
+    }
+
+
     public CompletableFuture<Integer> startToReturnCode() {
         Process p = start();
-        startDestinationThread(p);
+        try {
+            startDestinationThread(p).get();
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
         return startWaitForThread(p);
     }
 
     protected CompletableFuture<Integer> startWaitForThread(Process p) {
         CompletableFuture<Integer> retCode = new CompletableFuture<>();
-        executeTask(() -> {
+        executeTask(true, () -> {
             try {
                 retCode.complete(p.waitFor());
-            } catch (Exception ex) {
-                throw new RuntimeException(ex);
+            } catch (Throwable ex) {
+                retCode.completeExceptionally(ex);
             }
         });
         return retCode;
@@ -299,14 +455,29 @@ public class ProcessShell<OutType> {
 
     protected CompletableFuture<OutType> startDestinationThread(Process p) {
         CompletableFuture<OutType> dest = new CompletableFuture<>();
-        if (outputProcess != null) {
-            executeTask(() -> processOutput(p, dest::complete));
-        }
+        executeTask(false, () -> processOutput(p, dest));
         return dest;
     }
 
-    protected void executeTask(Runnable r) {
-        new Thread(r).start();
+    protected void executeTask(boolean includeWaits, Runnable r) {
+        if (includeWaits) { //it creates an CompletableFuture and add to the list; the future can be used for synchronize processes
+            CompletableFuture<?> tf = new CompletableFuture<>();
+            Thread t = new Thread(() -> {
+                try {
+                    r.run();
+                    tf.complete(null);
+                } catch (Throwable ex) {
+                    tf.completeExceptionally(ex);
+                }
+            });
+            executedThreadsWaits.add(tf);
+            executedThreads.add(t);
+            t.start();
+        } else { //the task is used for the last output
+            Thread t = new Thread(r);
+            executedThreads.add(t);
+            t.start();
+        }
     }
 
     public OutType startAndGet(long timeout, TimeUnit unit) {
@@ -405,7 +576,7 @@ public class ProcessShell<OutType> {
     public int runToReturnCode() {
         Process p = start();
         try {
-            startDestinationThread(p);
+            startDestinationThread(p).get();
             return p.waitFor();
         } catch (Exception ex) {
             throw new RuntimeException(ex);
@@ -417,23 +588,76 @@ public class ProcessShell<OutType> {
     }
 
     public String runToString() {
-        return String.join("\n", runToLines());
+        return setOutputString().startAndGet();
+    }
+
+    public byte[] runToBytes() {
+        return setOutputBytes().startAndGet();
     }
 
     public void processInput(Process p) {
+        processProcessor(p, inputProcess);
+    }
+
+    public void processProcessor(Process p, Processor<Process> prc) {
         try {
-            inputProcess.process(p);
+            prc.process(p);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public void processOutput(Process p, Consumer<OutType> o) {
+    public void processOutput(Process p, CompletableFuture<OutType> f) {
         try {
-            outputProcess.process(p, o);
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
+            Consumer<OutType> t = f::complete;
+            if (waitThreads) { //before complete the output, waits other processes (inputs and error-outputs)
+                t = (c) -> {
+                    try {
+                        getExecutedThreadsWaitsFuture().get();
+                    } catch (Throwable ex) {
+                        f.completeExceptionally(ex);
+                    }
+                    f.complete(c);
+                };
+            }
+            if (outputProcess != null) {
+                outputProcess.process(p, t);
+            } else {
+                t.accept(null);
+            }
+        } catch (Throwable ex) {
+            f.completeExceptionally(ex);
         }
     }
 
+    public void processError(Process p) {
+        processProcessor(p, errorProcess);
+    }
+
+    public List<Thread> getExecutedThreads() {
+        return executedThreads;
+    }
+
+    public List<CompletableFuture<?>> getExecutedThreadsWaits() {
+        return executedThreadsWaits;
+    }
+
+    public CompletableFuture<?> getExecutedThreadsWaitsFuture() {
+        return CompletableFuture.allOf(
+                executedThreadsWaits.toArray(new CompletableFuture<?>[0]));
+    }
+
+    /**
+     * @param waitThreads if true (default), it synchronize processes
+     *                    including error-outputs and inputs before completion of outputs.
+     * @return this
+     */
+    public ProcessShell<OutType> setWaitThreads(boolean waitThreads) {
+        this.waitThreads = waitThreads;
+        return this;
+    }
+
+    public boolean isWaitThreads() {
+        return waitThreads;
+    }
 }
