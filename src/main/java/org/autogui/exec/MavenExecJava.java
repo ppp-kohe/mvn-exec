@@ -633,8 +633,20 @@ public class MavenExecJava {
         if (arg.contains(" ")) {
             if (!arg.contains("'")) {
                 return "'" + arg + "'";
-            } else {
+            } else if (!arg.contains("\"")) {
                 return "\"" + arg + "\"";
+            } else { //both " ' space are included in the arg: <a" 'c> -> <a'"'' '"'">
+                StringBuilder buf = new StringBuilder();
+                for (char c : arg.toCharArray()) {
+                    if (c == '\'') {
+                        buf.append("\"").append(c).append("\"");
+                    } else if (c == ' ' || c == '\"') {
+                        buf.append("'").append(c).append("'");
+                    } else {
+                        buf.append(c);
+                    }
+                }
+                return buf.toString();
             }
         } else {
             return arg;

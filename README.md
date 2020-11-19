@@ -4,13 +4,13 @@ This is a small utility for executing a main class in a Maven project with short
 
 ## Building and installation
 
-The project uses [apache-maven](http://maven.apache.org) and depends on Java 8 or later.
+The project uses [apache-maven](http://maven.apache.org) and depends on Java 11 or later.
 
 Add the script `mvn-exec` to your `PATH` and execute the script.
 The script will automatically compile the project with Maven.
 
-You can also build the utility with `mvn compile package ` 
-and then you can execute `java -jar target/mvn-exec-1.4.jar`
+You can also build the utility with `mvn compile package shade:shade` 
+and then you can execute `java -jar target/mvn-exec-1.6.jar`.
 
 ## Usage
 
@@ -69,7 +69,7 @@ The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugi
 
 * Also, `-r` can launch command line same as regular execution other than not showing the `> mvn exec:exec ...` line to the standard error.
 
-### Comiling the target project before execution
+### Compiling the target project before execution
 
 * append `-c` in order to run `mvn compile` before execution if you have edited some code in your project
 
