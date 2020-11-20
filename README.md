@@ -1,6 +1,6 @@
 # mvn-exec
 
-This is a small utility for executing a main class in a Maven project with short command line.
+This is a small utility for executing a main class in a Maven project with a short command line.
 
 ## Building and installation
 
@@ -9,13 +9,19 @@ The project uses [apache-maven](http://maven.apache.org) and depends on Java 11 
 Add the script `mvn-exec` to your `PATH` and execute the script.
 The script will automatically compile the project with Maven.
 
-You can also build the utility with `mvn compile package shade:shade` 
-and then you can execute `java -jar target/mvn-exec-1.6.jar`.
+You can also build and execute the utility by the following steps:
+
+```bash
+mvn package dependency:copy-dependencies -DoutputDirectory=target/mods
+cp targert/mvn-exec-*.jar target/mods
+
+java -p target/mods -m org.autogui.mvn_exec
+```
 
 ## Usage
 
-* specify your maven project path with `-p` option.
-* supply a class-name in your project you want to launch.
+* specify your Maven project path with `-p` option.
+* supply a class-name in the your project you want to launch.
 
 e.g. suppose `my-maven-project` contains `my.pack.MyMainClass` as an executable main-class.
 
@@ -32,9 +38,11 @@ The script launch the class via the following command line:
      -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass arg1 arg2 arg3"
 ```
 
-The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugin/) for launching a class.
+The utility relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugin/) for launching a class.
 
-* `-g` just gets the command line without launching and outputs it to the standard output.
+There are several options for changing the behavior of the utility.
+
+* `-g` just gets the Maven command line without launching and outputs it to the standard output.
 
 ```bash
   % mvn-exec -p path/to/my-maven-project -g MyMainClass 
@@ -71,7 +79,7 @@ The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugi
 
 ### Compiling the target project before execution
 
-* append `-c` in order to run `mvn compile` before execution if you have edited some code in your project
+* append `-c`  to run `mvn compile` before execution if you have edited some code in your project
 
 ```bash
   % mvn-exec -p path/to/my-maven-project -c MyMainClass arg1 arg2 arg3
@@ -83,12 +91,13 @@ The tool relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugi
 ```
 
 If the project directory does not have `target/classes` sub-directory, 
-then the tool also runs `mvn compile`.
+then the utility also runs `mvn compile`.
 
 * `-sac` suppresses the automatic comilation for creating `target/classes`.
 
+Note: the utility currently does not support custom target directories other than `targe`.
 
-### Class name completion 
+### Class name completion
 
 The tool searches main classes of a target project thanks to [ASM](https://asm.ow2.io). 
 
@@ -102,12 +111,12 @@ For selecting the shorter name,  use dot prefix like  `.MyMainClass`.
 
 ### Relative path issue (for exec:java)
 
-By default, the tool launches program by `mvn exec:exec -Dexec.executable=java ...`. 
+By default, the utility launches a program by `mvn exec:exec -Dexec.executable=java ...`. 
 The option `--execJava` can switch to `exec:java`. 
 The `exec:exec` launches a new  JVM process for program. 
 On the other hand, the `exec:java` runs the program in the same proecess of Maven.
 
-`mvn exec:java` seems to be designed for executing under the project directory of current working directory.
+`mvn exec:java` seems to be designed for executing under the project directory of current working directory. It cannot change the working directory other than the target project dir. Thus, we need to provide the absolute path for an outer path of the project as arguments for the executed program.
 So, the launched class cannot handle relative paths of the working directory launching the `mvn-exec` script.
 To solve the problem, the utility automatically converts relative paths in arguments to absolute paths.
 
@@ -125,20 +134,36 @@ i.e. `existing/nonExisting` will be completed as `/path/to/existing/nonExisting`
 
 In Windows, `/` becomes `\` and `:` becoms `;`.
 
-Note: `mvn exec:java` cannot change the working directory other than the target project dir. Thus, we need to provide the absolute path for an outer path of the project as arguments for the executed program.
-
 ### Showing errors
 
-`exec-maven-plugin` outputs some kind of errors through maven's logger. 
-The tool suppresses those logging messages because of invading the standard-output of the execution of command line.
+`exec-maven-plugin` outputs some kind of errors through Maven's logger. 
+The utility suppresses those logging messages because of invading the standard-output of the execution of command line.
 This is realized by supplying `-Dorg.slf4j.simpleLogger.defaultLogLevel=error` via the environment variable `MAVEN_OPTS`.
 The log-level only shows `[ERROR]` lines to the standard-output, which indicate occurrence of errors by compilation failure or unhandled exceptions.
 
 * `--logOff` completely turns off log-lines including those error messages, realized by `-Dorg.slf4j.simpleLogger.defaultLogLevel=off`.
 
 The suppressed messages include JVM launching errors such as `ClassNotFoundException` and `UnsupportedClassVersionError`. 
-Thus, if you launch a program compiled in Java 11 by the tool under Java 8, 
+Thus, if you launch a program compiled in Java 11 by the utility under Java 8, 
 then JVM causes `UnsupportedClassVersionError` but the tool silently exits.
 
 * `-w` show WARNING and ERROR messages caused by maven execution including JVM failures, realized by `-Dorg.slf4j.simpleLogger.defaultLogLevel=warn`.
+
+## Using as a library 
+
+The project have `module-info.java` : the name of the module is `org.autogui.mvn_exec`
+
+So the scirpt relies on the module mechansim to execute the utility. 
+
+Note, the project is not registered on the Maven public repository. You need manual  `mvn install ` to install the utility into your local repository. Then, you can refer the utility as a library in your local Maven project by the following dependency tag
+
+```xml
+<dependency>
+  <groupId>org.autogui</groupId>
+  <artifact>mvn-exec</artifact>
+  <version>1.6</version>
+</dependency>
+```
+
+
 
