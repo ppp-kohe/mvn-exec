@@ -7,25 +7,16 @@ then
 fi
 projectdir="$(dirname $cmd)"
 targetdir="${projectdir}/target"
-classesdir="${targetdir}/classes"
+moddir="${targetdir}/mods"
 currentdir="${PWD}"
 
-#obtains classes/
-if [ ! -d "${classesdir}" ]
+#obtains target/mods
+if [ ! -d "${moddir}" ]
 then
     cd "${projectdir}"
-    mvn compile
+    mvn clean package dependency:copy-dependencies "-DoutputDirectory=${moddir}"
+    cp "$targetdir"/mvn-exec-*.jar "${moddir}"
     cd "${currentdir}"
 fi
 
-#obtains path to asm.jar
-asmpathfile="${targetdir}/mvn-exec-cp.txt"
-if [ ! -f "${asmpathfile}" ]
-then
-    cd "${projectdir}"
-    mvn dependency:build-classpath -DincludeArtifactIds=asm -Dmdep.outputFile="${asmpathfile}"
-    cd "${currentdir}"
-fi
-asmpath=$(cat "${asmpathfile}" | tr '[:space:]' ':')
-
-java ${MAVEN_EXEC_JAVA_OPTS} -cp "${classesdir}:${asmpath}" org.autogui.exec.MavenExecJava "$@"
+java ${MAVEN_EXEC_JAVA_OPTS} -p "${moddir}" -m "org.autogui.mvn_exec" "$@"
