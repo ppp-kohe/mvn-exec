@@ -1,6 +1,5 @@
-package org.autogui;
+package org.autogui.exec;
 
-import org.autogui.exec.ProcessShell;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -34,7 +33,7 @@ public class ProcessShellTest {
 
     @Test
     public void testRunToString() {
-        Assert.assertEquals("runToString", "finish:hello\n",
+        Assert.assertEquals("runToString", String.format("finish:hello%n"),
                 ProcessShell.get(javaCommand, "-cp", testClassPath, TestMain.class.getName(), "hello")
                 .echo()
                 .runToString());
@@ -51,7 +50,7 @@ public class ProcessShellTest {
     @Test
     public void testSet() {
         Assert.assertEquals("set",
-            "HELLO=hello-world\n",
+            String.format("HELLO=hello-world%n"),
             ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainEnv.class.getName())
                 .echo()
                 .set(b -> b.environment().put("HELLO", "hello-world"))
@@ -61,7 +60,7 @@ public class ProcessShellTest {
     @Test
     public void testSetInputLines() {
         Assert.assertEquals("setInputLines",
-            "<hello>\n<world>\n<>\n<>\n",
+            String.format("<hello>%n<world>%n<>%n<>%n"),
             ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainRead.class.getName())
                 .setInputLines(Arrays.asList("hello", "world", "", ""))
                 .runToString());
@@ -70,7 +69,7 @@ public class ProcessShellTest {
     @Test
     public void testSetInputString() {
         Assert.assertEquals("setInputLines",
-                "<hello>\n<world>\n<>\n<>\n",
+                String.format("<hello>%n<world>%n<>%n<>%n"),
                 ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainRead.class.getName())
                         .setInputString("hello\nworld\n\n\n")
                         .runToString());
@@ -90,7 +89,7 @@ public class ProcessShellTest {
         while (buf.position() < buf.limit()) {
             expect.append("<").append(buf.get()).append(">");
         }
-        expect.append("\n");
+        expect.append(String.format("%n"));
         Assert.assertEquals("setInputStream",
                 expect.toString(),
                 ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainBytes.class.getName())
@@ -129,7 +128,7 @@ public class ProcessShellTest {
                 ByteBuffer.wrap(bout.toByteArray()))
             .toString();
         Assert.assertEquals("setOutputStream",
-                "finish:hello\n",
+                String.format("finish:hello%n"),
                 s);
     }
 
@@ -147,14 +146,14 @@ public class ProcessShellTest {
                 .setOutputString()
                 .startOutput();
         Assert.assertEquals("startOutput",
-                "finish:hello\n",
+                String.format("finish:hello%n"),
                 res.get());
     }
 
     @Test
     public void testStartToString() throws Exception {
         Assert.assertEquals("startToString",
-                "finish:hello\n",
+                String.format("finish:hello%n"),
                 ProcessShell.get(javaCommand, "-cp", testClassPath, TestMain.class.getName(), "hello")
                 .startToString()
                 .get());
@@ -181,7 +180,7 @@ public class ProcessShellTest {
     @Test
     public void testRedirectError() {
         Assert.assertEquals("redirectError",
-                "error:hello\nout:world\n",
+                String.format("error:hello%nout:world%n"),
                 ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainError.class.getName(), "hello", "world")
                     .set(b -> b.redirectErrorStream(true))
                     .runToString());
@@ -190,7 +189,7 @@ public class ProcessShellTest {
     @Test
     public void testStartToBytes() throws Exception {
         Assert.assertEquals("startToBytes",
-                Arrays.toString("finish:hello\n".getBytes(StandardCharsets.UTF_8)),
+                Arrays.toString(String.format("finish:hello%n").getBytes(StandardCharsets.UTF_8)),
                 Arrays.toString(ProcessShell.get(javaCommand, "-cp", testClassPath, TestMain.class.getName(), "hello")
                         .startToBytes()
                         .get()));
@@ -206,7 +205,7 @@ public class ProcessShellTest {
                 });
         sh.runToReturnCode();
         Assert.assertEquals("setErrorString",
-                "error:hello\n",
+                String.format("error:hello%n"),
                 buf.get(0));
     }
 
