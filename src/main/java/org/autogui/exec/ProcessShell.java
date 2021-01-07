@@ -12,9 +12,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 
 /**
@@ -107,12 +105,11 @@ public class ProcessShell<OutType> {
     }
 
     public ProcessShell<OutType> setRedirectToInherit() {
-        return set(p -> {
+        return set(p ->
             p.redirectError(ProcessBuilder.Redirect.INHERIT)
                     .redirectInput(ProcessBuilder.Redirect.INHERIT)
-                    .redirectOutput(ProcessBuilder.Redirect.INHERIT);
-        });
-    };
+                    .redirectOutput(ProcessBuilder.Redirect.INHERIT));
+    }
 
     public ProcessShell<OutType> echo() {
         return echo("> ");
@@ -269,6 +266,59 @@ public class ProcessShell<OutType> {
         });
     }
 
+    public ProcessShell<BlockingQueue<String>> setOutputLinesQueue() {
+        ArrayBlockingQueue<String> q = new ArrayBlockingQueue<>(100);
+        return setOutput((p, dest) -> {
+            dest.accept(q);
+            transferLinesQueue(p.getInputStream(), q);
+        });
+    }
+
+    public void transferLinesQueue(InputStream src, BlockingQueue<String> dst) throws IOException, InterruptedException {
+        try (BufferedReader in = new BufferedReader(
+                new InputStreamReader(src, getEncoding()))) {
+            String line;
+            while ((line = in.readLine()) != null) {
+                dst.put(line);
+            }
+        } finally {
+            dst.put("\n");
+        }
+    }
+
+    public static void forEachLinesQueue(BlockingQueue<String> q, Consumer<String> f) {
+        try {
+            while (true) {
+                String line = q.take();
+                if (line.equals("\n")) {
+                    break;
+                } else {
+                    f.accept(line);
+                }
+            }
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static boolean forEachLinesQueuePoll(BlockingQueue<String> q, Consumer<String> f, long timeout, TimeUnit timeUnit) {
+        try {
+            while (true) {
+                String line = q.poll(timeout, timeUnit);
+                if (line == null) {
+                    return false;
+                } else if (line.equals("\n")) {
+                    break;
+                } else {
+                    f.accept(line);
+                }
+            }
+            return true;
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
     public ProcessShell<Processor<Process>> setOutput(Processor<Process> outputProcess) {
         return setOutput((process, dest) -> {
             outputProcess.process(process);
@@ -284,21 +334,13 @@ public class ProcessShell<OutType> {
         return newThis;
     }
 
-    @SuppressWarnings("unchecked")
-    public <NewOutType> ProcessShell<NewOutType> setErrorAsOutput(ProcessorForOutput<NewOutType> outputProcess) {
-        ProcessShell<NewOutType> newThis = (ProcessShell<NewOutType>) this;
-        newThis.outputProcess = outputProcess;
-        newThis.builder.redirectError(ProcessBuilder.Redirect.PIPE);
-        return newThis;
-    }
-
     ///////////////////
 
     public ProcessShell<OutType> setErrorFile(Path errorFile) {
         return setError((p) -> {
             try (OutputStream out = new BufferedOutputStream(
                     Files.newOutputStream(errorFile));
-                InputStream in = p.getErrorStream()) {
+                 InputStream in = p.getErrorStream()) {
                 transfer(in, out);
             }
         });
@@ -307,7 +349,7 @@ public class ProcessShell<OutType> {
     public ProcessShell<OutType> setErrorLines(Consumer<Iterable<String>> lines) {
         return setError(p -> {
             try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(p.getInputStream(), encoding))) {
+                    new InputStreamReader(p.getErrorStream(), getEncoding()))) {
                 List<String> list = new ArrayList<>();
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -344,6 +386,26 @@ public class ProcessShell<OutType> {
             }
         });
     }
+
+    public ProcessShell<OutType> setErrorLine(boolean receiveEnd, Consumer<String> queue) {
+        return setError((p) -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(p.getErrorStream(), getEncoding()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    queue.accept(line);
+                }
+            } finally {
+                queue.accept("\n");
+            }
+        });
+    }
+
+    public ProcessShell<OutType> setErrorLinesQueue(BlockingQueue<String> queue) {
+        return setError((p) ->
+                transferLinesQueue(p.getErrorStream(), queue));
+    }
+
 
     public ProcessShell<OutType> setError(Processor<Process> p) {
         errorProcess = p;
@@ -426,6 +488,18 @@ public class ProcessShell<OutType> {
             throw new RuntimeException(ex);
         }
         return startWaitForThread(p);
+    }
+
+    public CompletableFuture<BlockingQueue<String>> startToLinesQueue() {
+        ProcessShell<BlockingQueue<String>> ls = setOutputLinesQueue();
+        Process p = ls.start();
+        CompletableFuture<BlockingQueue<String>> retLs = ls.startDestinationThread(p);
+        try {
+            p.waitFor();
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+        return retLs;
     }
 
     protected CompletableFuture<Integer> startWaitForThread(Process p) {
@@ -576,7 +650,7 @@ public class ProcessShell<OutType> {
     public int runToReturnCode() {
         Process p = start();
         try {
-            startDestinationThread(p).get();
+            startDestinationThread(p);
             return p.waitFor();
         } catch (Exception ex) {
             throw new RuntimeException(ex);
@@ -593,6 +667,10 @@ public class ProcessShell<OutType> {
 
     public byte[] runToBytes() {
         return setOutputBytes().startAndGet();
+    }
+
+    public BlockingQueue<String> runToLinesQueue() {
+        return setOutputLinesQueue().startAndGet();
     }
 
     public void processInput(Process p) {

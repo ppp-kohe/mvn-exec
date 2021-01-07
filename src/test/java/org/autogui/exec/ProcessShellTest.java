@@ -9,8 +9,12 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 
 public class ProcessShellTest {
@@ -30,6 +34,14 @@ public class ProcessShellTest {
                 .echo()
                 .runToReturnCode());
     }
+    @Test
+    public void testRunToReturnCodeNoOut() {
+        Assert.assertEquals("runToReturnCode",
+                123,
+                ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainExitNoOut.class.getName(), "hello")
+                        .echo()
+                        .runToReturnCode());
+    }
 
     @Test
     public void testRunToString() {
@@ -45,6 +57,36 @@ public class ProcessShellTest {
                 ProcessShell.get(javaCommand, "-cp", testClassPath, TestMain.class.getName(), "hello\nworld\n\n")
                         .echo()
                         .runToLines());
+    }
+
+    @Test
+    public void testRunToLinesNoOut() {
+        Assert.assertEquals("runToLines", Collections.emptyList(),
+                ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainExitNoOut.class.getName(), "hello\nworld\n\n")
+                        .echo()
+                        .runToLines());
+    }
+
+    @Test
+    public void testRunToLinesQueue() {
+        List<String> ls = new ArrayList<>();
+        ProcessShell.forEachLinesQueue(
+                ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainExit.class.getName(), "hello\nworld\n\n")
+                        .echo()
+                        .runToLinesQueue(), ls::add);
+        Assert.assertEquals("runToLinesQueue", Arrays.asList("finish:hello", "world", "", ""),
+                ls);
+    }
+
+    @Test
+    public void testRunToLinesQueueNoOut() {
+        List<String> ls = new ArrayList<>();
+        ProcessShell.forEachLinesQueue(
+                ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainExitNoOut.class.getName(), "hello\nworld\n\n")
+                        .echo()
+                        .runToLinesQueue(), ls::add);
+        Assert.assertEquals("runToLinesQueue", Collections.emptyList(),
+                ls);
     }
 
     @Test
@@ -169,10 +211,49 @@ public class ProcessShellTest {
     }
 
     @Test
+    public void testStartToLinesQueue() throws Exception {
+        List<String> ls = new ArrayList<>();
+        ProcessShell.forEachLinesQueue(ProcessShell.get(javaCommand, "-cp", testClassPath, TestMain.class.getName(), "hello\nworld\n")
+                .startToLinesQueue()
+                .get(), ls::add);
+        Assert.assertEquals("startToLinesQueue",
+                Arrays.asList("finish:hello", "world", ""),
+                ls);
+    }
+
+    @Test
+    public void testStartToLinesNoOut() throws Exception {
+        Assert.assertEquals("startToLines",
+                Collections.emptyList(),
+                ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainExitNoOut.class.getName(), "hello\nworld\n")
+                        .startToLines()
+                        .get());
+    }
+    @Test
+    public void testStartToLinesQueueNoOut() throws Exception {
+        List<String> ls = new ArrayList<>();
+        ProcessShell.forEachLinesQueue(ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainExitNoOut.class.getName(), "hello\nworld\n")
+                .startToLinesQueue()
+                .get(), ls::add);
+        Assert.assertEquals("startToLinesQueue",
+                Collections.emptyList(),
+                ls);
+    }
+
+    @Test
     public void testStartToReturnCode() throws Exception {
         Assert.assertEquals("startToReturnCode",
                 123L,
                 (long) ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainExit.class.getName(), "hello")
+                        .startToReturnCode()
+                        .get());
+    }
+
+    @Test
+    public void testStartToReturnCodeNoOut() throws Exception {
+        Assert.assertEquals("startToReturnCode",
+                123L,
+                (long) ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainExitNoOut.class.getName(), "hello")
                         .startToReturnCode()
                         .get());
     }
@@ -197,16 +278,63 @@ public class ProcessShellTest {
 
     @Test
     public void testSetErrorString() throws Exception{
-        List<String> buf = new ArrayList<>();
+        CompletableFuture<String> f = new CompletableFuture<>();
         ProcessShell<?> sh = ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainError.class.getName(), "hello", "world")
                 .setErrorString(s -> {
-                    System.err.println(s);
-                    buf.add(s);
+                    System.err.println("<" + s + "> " + Thread.currentThread().getName());
+                    f.complete(s);
                 });
         sh.runToReturnCode();
         Assert.assertEquals("setErrorString",
                 String.format("error:hello%n"),
-                buf.get(0));
+                f.get(1100, TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    public void testSetErrorLines() throws Exception{
+        CompletableFuture<Iterable<String>> f = new CompletableFuture<>();
+        ProcessShell<?> sh = ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainError.class.getName(), "hello", "world")
+                .setErrorLines(s -> {
+                    System.err.println("<" + s + "> " + Thread.currentThread().getName());
+                    f.complete(s);
+                });
+        sh.runToReturnCode();
+        Assert.assertEquals("setErrorString",
+                Arrays.asList("error:hello"),
+                f.get(1100, TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    public void testSetErrorLinesQueue() throws Exception{
+        BlockingQueue<String> q = new ArrayBlockingQueue<>(10);
+        ProcessShell<?> sh = ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainError.class.getName(), "hello", "world")
+                .setErrorLinesQueue(q);
+        sh.runToReturnCode();
+        List<String> ls = new ArrayList<>();
+        ProcessShell.forEachLinesQueue(q, ls::add);
+        Assert.assertEquals("setErrorString",
+                Arrays.asList("error:hello"),
+                ls);
+    }
+
+
+    @Test
+    public void testSetErrorLine() throws Exception{
+        List<String> buf = new ArrayList<>();
+        CompletableFuture<List<String>> f = new CompletableFuture<>();
+        ProcessShell<?> sh = ProcessShell.get(javaCommand, "-cp", testClassPath, TestMainError.class.getName(), "hello", "world")
+                .setErrorLine(true, s -> {
+                    System.err.println("<" + s + "> " + Thread.currentThread().getName());
+                    if (s.equals("\n")) {
+                        f.complete(buf);
+                    } else {
+                        buf.add(s);
+                    }
+                });
+        sh.runToReturnCode();
+        Assert.assertEquals("setErrorString",
+                Arrays.asList("error:hello"),
+                f.get(1100, TimeUnit.MILLISECONDS));
     }
 
     public static class TestMainExit {
@@ -260,6 +388,13 @@ public class ProcessShellTest {
             System.err.println("error:" + args[0]);
             Thread.sleep(1000);
             System.out.println("out:" + args[1]);
+        }
+    }
+
+    public static class TestMainExitNoOut {
+        public static void main(String[] args) throws Exception {
+            Thread.sleep(1000);
+            System.exit(123);
         }
     }
 }
