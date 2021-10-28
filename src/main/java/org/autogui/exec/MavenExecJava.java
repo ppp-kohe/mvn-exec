@@ -230,6 +230,8 @@ public class MavenExecJava {
                     completeWorkingDirectory = true;
                 } else if (arg.startsWith("-J")) {
                     jvmOptions.add(arg.substring(2));
+                } else if (arg.startsWith("-M")) {
+                    mvnOptions.add(arg.substring(2));
                 } else if (arg.equals("--mvn")) {
                     ++i;
                     mvnCommand = args[i];
@@ -315,9 +317,10 @@ public class MavenExecJava {
                 "                    as arguments for the executed program. \n" +
                 "     -w  | --logWarn    :  set the log-level to \"warn\", meaning \"-Dorg.slf4j.simpleLogger.defaultLogLevel=warn\" instead of \"error\". \n" +
                 "     -e                 :  -w and pass -e to maven to show errors.\n" +
-                "     -J<opt>            :  pass opt to JVM. e.g. -J-Xmx=10g \n" +
+                "     -J<opt>            :  pass opt to JVM. e.g. -J-Xmx10g \n" +
+                "     -M<opt>            :  pass opt to Maven. " +
                 "     --logOff           :  set the log-level to \"off\".\n" +
-                "     -D<name>[=<value>] :  set a system-property. repeatable.\n" +
+                "     -D<name>[=<value>] :  set a system-property to exec JVM. repeatable.\n" +
                 "     --debug            :  show debugging messages.\n" +
                 "     -X                 :  --debug and pass -X to mvn.\n" +
                 "     --mvn <mvnCommand> :  set the command name of maven. the default is \"mvn\" or \"mvn.cmd\" for Windows.\n" +
@@ -538,9 +541,6 @@ public class MavenExecJava {
         command.add("-Dexec.executable=java");
         command.add("-Dexec.workingdir=" + new File(".").getAbsolutePath());
         command.add("-Dexec.args=" + getCommandArgumentsForExec(mainClass, args));
-        propertySettings.stream()
-                .map(this::getPropertySetting)
-                .forEach(command::add);
         return command;
     }
 
@@ -558,10 +558,15 @@ public class MavenExecJava {
                 .map(this::getCommandArgumentWithoutCompletion)
                 .collect(Collectors.joining(" "));
 
+        String propOpts = propertySettings.stream()
+                .map(this::getPropertySetting)
+                .map(this::getCommandArgumentWithoutCompletion)
+                .collect(Collectors.joining(" "));
+
         String argStr = args.stream()
                 .map(this::getCommandArgumentWithoutCompletion)
                 .collect(Collectors.joining(" "));
-        return String.join(" ", jvmOpts, cp, mp, mainClass, argStr);
+        return String.join(" ", jvmOpts, propOpts, cp, mp, mainClass, argStr);
     }
 
     public String getCommandArgumentWithoutCompletion(String arg) {

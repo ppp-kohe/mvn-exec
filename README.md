@@ -161,7 +161,7 @@ Note, the project is not registered on the Maven public repository. You need man
 <dependency>
   <groupId>org.autogui</groupId>
   <artifact>mvn-exec</artifact>
-  <version>1.6</version>
+  <version>1.7</version>
 </dependency>
 ```
 

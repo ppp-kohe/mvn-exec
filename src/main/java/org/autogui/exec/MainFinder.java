@@ -27,7 +27,7 @@ public class MainFinder extends ClassVisitor {
     }
 
     public MainFinder(Pattern namePattern) {
-        super(Opcodes.ASM7);
+        super(Opcodes.ASM9);
         this.namePattern = namePattern;
     }
 

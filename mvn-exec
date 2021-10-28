@@ -19,4 +19,9 @@ then
     cd "${currentdir}"
 fi
 
-java ${MAVEN_EXEC_JAVA_OPTS} -p "${moddir}" -m "org.autogui.mvn_exec" "$@"
+javacmd="java"
+if [ ! -z "${JAVA_HOME}" ]
+then
+    javacmd="${JAVA_HOME}/bin/java"
+fi
+"${javacmd}" ${MAVEN_EXEC_JAVA_OPTS} -p "${moddir}" -m "org.autogui.mvn_exec" "$@"
