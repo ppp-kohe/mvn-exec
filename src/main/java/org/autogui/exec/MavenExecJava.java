@@ -50,6 +50,11 @@ public class MavenExecJava {
 
     public MavenExecJava() {
          updateDebug();
+         initOptions();
+    }
+
+    protected void initOptions() {
+        mvnOptions.addAll(Arrays.asList("--color", "always")); //stop modifying ANSI coloring (by org.fusesource.jansi) for stdout/err by always enabling coloring (?)
     }
 
     public void log(String fmt, Object... args) {
@@ -569,12 +574,14 @@ public class MavenExecJava {
         return String.join(" ", jvmOpts, propOpts, cp, mp, mainClass, argStr);
     }
 
+    static Pattern spaces = Pattern.compile("\\s");
+
     public String getCommandArgumentWithoutCompletion(String arg) {
-        if (arg.contains(" ")) {
+        if (spaces.matcher(arg).find()) {
             if (!arg.contains("'")) {
                 return "'" + arg + "'";
             } else {
-                return "\"" + arg + "\"";
+                return "\"" + arg + "\""; //TODO escape
             }
         } else {
             return arg;
