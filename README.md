@@ -4,7 +4,7 @@ This is a small utility for executing a main class in a Maven project with a sho
 
 ## Building and installation
 
-The project uses [apache-maven](http://maven.apache.org) and depends on Java 11 or later.
+The project uses [apache-maven](http://maven.apache.org) and depends on Java 17 or later.
 
 Add the script `mvn-exec` to your `PATH` and execute the script.
 The script will automatically compile the project with Maven.
