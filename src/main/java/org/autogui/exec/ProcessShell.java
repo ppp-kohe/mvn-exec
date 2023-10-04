@@ -726,7 +726,7 @@ public class ProcessShell<OutType> {
     }
 
     /**
-     * @param waitThreads if true (default), it synchronize processes
+     * @param waitThreads if true (default), it synchronizes processes
      *                    including error-outputs and inputs before completion of outputs.
      * @return this
      */

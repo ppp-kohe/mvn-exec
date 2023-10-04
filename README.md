@@ -21,7 +21,7 @@ java -p target/mods -m org.autogui.mvn_exec
 ## Usage
 
 * specify your Maven project path with `-p` option.
-* supply a class-name in the your project you want to launch.
+* supply a class-name in your project you want to launch.
 
 e.g. suppose `my-maven-project` contains `my.pack.MyMainClass` as an executable main-class.
 
@@ -93,7 +93,7 @@ There are several options for changing the behavior of the utility.
 If the project directory does not have `target/classes` sub-directory, 
 then the utility also runs `mvn compile`.
 
-* `-sac` suppresses the automatic comilation for creating `target/classes`.
+* `-sac` suppresses the automatic compilation for creating `target/classes`.
 
 Note: the utility currently does not support custom target directories other than `targe`.
 
@@ -104,7 +104,7 @@ The tool searches main classes of a target project thanks to [ASM](https://asm.o
 You can specify a main class by a fully qualified name or a sub-sequence of characters.
 In the latter case, `Abc` becomes the pattern `A.*?[bB].*?[cC]`.
 
-e.g. `my.pack.MyMainClass` can be specifyed by `mmc`, `MMC`, `Mmc`, `MyMaCl` and so on.
+e.g. `my.pack.MyMainClass` can be specified by `mmc`, `MMC`, `Mmc`, `MyMaCl` and so on.
 
 Sometimes, a longer name is selected. e.g.  `MyMainClass` selects `my.pack.MyMainClassTest` instead of `my.pack.MyMainClass`. 
 For selecting the shorter name,  use dot prefix like  `.MyMainClass`.
@@ -114,7 +114,7 @@ For selecting the shorter name,  use dot prefix like  `.MyMainClass`.
 By default, the utility launches a program by `mvn exec:exec -Dexec.executable=java ...`. 
 The option `--execJava` can switch to `exec:java`. 
 The `exec:exec` launches a new  JVM process for program. 
-On the other hand, the `exec:java` runs the program in the same proecess of Maven.
+On the other hand, the `exec:java` runs the program in the same process of Maven.
 
 `mvn exec:java` seems to be designed for executing under the project directory of current working directory. It cannot change the working directory other than the target project dir. Thus, we need to provide the absolute path for an outer path of the project as arguments for the executed program.
 So, the launched class cannot handle relative paths of the working directory launching the `mvn-exec` script.
@@ -132,7 +132,7 @@ If a path `<pN>` starts with non-`/` (`Paths.get(p).isAbsolute()==false`)
 and the first one component of the path exists, then `<pN>` will be completed.
 i.e. `existing/nonExisting` will be completed as `/path/to/existing/nonExisting`.
 
-In Windows, `/` becomes `\` and `:` becoms `;`.
+In Windows, `/` becomes `\` and `:` becomes `;`.
 
 ### Showing errors
 
@@ -153,7 +153,7 @@ then JVM causes `UnsupportedClassVersionError` but the tool silently exits.
 
 The project have `module-info.java` : the name of the module is `org.autogui.mvn_exec`
 
-So the scirpt relies on the module mechansim to execute the utility. 
+So the script relies on the module mechanism to execute the utility. 
 
 Note, the project is not registered on the Maven public repository. You need manual  `mvn install ` to install the utility into your local repository. Then, you can refer the utility as a library in your local Maven project by the following dependency tag
 
@@ -164,6 +164,3 @@ Note, the project is not registered on the Maven public repository. You need man
   <version>1.7</version>
 </dependency>
 ```
-
-
-
