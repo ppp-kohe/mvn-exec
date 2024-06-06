@@ -141,12 +141,12 @@ public class ProcessShellTest {
 
     @Test
     public void testSetOutput() throws Exception {
-        Assert.assertEquals("setOutput", 123L,
+        Assert.assertEquals("setOutput", (Long) 123L,
                 ProcessShell.get(javaCommand, "-cp", testClassPath, TestMain.class.getName(), "hello")
                 .<Long>setOutput((proc, tgt) -> {
-                    tgt.accept(123L);
+                    tgt.accept((Long) 123L);
                 })
-                .startOutput().get().longValue());
+                .startOutput().get());
     }
 
     @Test
@@ -300,7 +300,7 @@ public class ProcessShellTest {
                 });
         sh.runToReturnCode();
         Assert.assertEquals("setErrorString",
-                Arrays.asList("error:hello"),
+                List.of("error:hello"),
                 f.get(1100, TimeUnit.MILLISECONDS));
     }
 
@@ -313,7 +313,7 @@ public class ProcessShellTest {
         List<String> ls = new ArrayList<>();
         ProcessShell.forEachLinesQueue(q, ls::add);
         Assert.assertEquals("setErrorString",
-                Arrays.asList("error:hello"),
+                List.of("error:hello"),
                 ls);
     }
 
@@ -333,7 +333,7 @@ public class ProcessShellTest {
                 });
         sh.runToReturnCode();
         Assert.assertEquals("setErrorString",
-                Arrays.asList("error:hello"),
+                List.of("error:hello"),
                 f.get(1100, TimeUnit.MILLISECONDS));
     }
 

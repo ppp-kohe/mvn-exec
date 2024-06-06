@@ -174,9 +174,9 @@ public class MainFinder extends ClassVisitor {
                 int fg = wordRanges.stream()
                         .filter(r -> r[1] <= gs && gs < r[2])
                         .findFirst()
-                        .map(r -> r[0])
-                        .orElse(-1);
-                found.add(fg);
+                        .stream().mapToInt(r -> r[0])
+                        .findFirst().orElse(-1);
+                found.add((Integer) fg);
             }
             int matchedGroups = found.size();
             int totalGroups = wordRanges.size();

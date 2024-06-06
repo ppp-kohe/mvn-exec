@@ -171,10 +171,8 @@ public class ProcessShell<OutType> {
 
     public ProcessShell<OutType> setInputStream(InputStream input) {
         return setInput(p -> {
-            try (OutputStream out = p.getOutputStream()) {
+            try (input; OutputStream out = p.getOutputStream()) {
                 transfer(input, out);
-            } finally {
-                input.close();
             }
         });
     }
@@ -379,10 +377,8 @@ public class ProcessShell<OutType> {
 
     public ProcessShell<OutType> setErrorStream(OutputStream out) {
         return setError((p) -> {
-            try (InputStream in = p.getErrorStream()) {
+            try (out; InputStream in = p.getErrorStream()) {
                 transfer(in, out);
-            } finally {
-                out.close();
             }
         });
     }
@@ -506,7 +502,7 @@ public class ProcessShell<OutType> {
         CompletableFuture<Integer> retCode = new CompletableFuture<>();
         executeTask(true, () -> {
             try {
-                retCode.complete(p.waitFor());
+                retCode.complete((Integer) p.waitFor());
             } catch (Throwable ex) {
                 retCode.completeExceptionally(ex);
             }
@@ -559,43 +555,28 @@ public class ProcessShell<OutType> {
     }
 
     public ChronoUnit toChronoUnit(TimeUnit unit) {
-        switch (unit) {
-            case DAYS:
-                return ChronoUnit.DAYS;
-            case HOURS:
-                return ChronoUnit.HOURS;
-            case MINUTES:
-                return ChronoUnit.MINUTES;
-            case SECONDS:
-                return ChronoUnit.SECONDS;
-            case MILLISECONDS:
-                return ChronoUnit.MILLIS;
-            case MICROSECONDS:
-                return ChronoUnit.MICROS;
-            case NANOSECONDS:
-                return ChronoUnit.NANOS;
-        }
-        return null;
+        return switch (unit) {
+            case DAYS -> ChronoUnit.DAYS;
+            case HOURS -> ChronoUnit.HOURS;
+            case MINUTES -> ChronoUnit.MINUTES;
+            case SECONDS -> ChronoUnit.SECONDS;
+            case MILLISECONDS -> ChronoUnit.MILLIS;
+            case MICROSECONDS -> ChronoUnit.MICROS;
+            case NANOSECONDS -> ChronoUnit.NANOS;
+        };
     }
 
     public TimeUnit toTimeUnit(ChronoUnit unit) {
-        switch (unit) {
-            case DAYS:
-                return TimeUnit.DAYS;
-            case HOURS:
-                return TimeUnit.HOURS;
-            case MINUTES:
-                return TimeUnit.MINUTES;
-            case SECONDS:
-                return TimeUnit.SECONDS;
-            case MILLIS:
-                return TimeUnit.MILLISECONDS;
-            case MICROS:
-                return TimeUnit.MICROSECONDS;
-            case NANOS:
-                return TimeUnit.NANOSECONDS;
-        }
-        throw new IllegalArgumentException("unsupported: " + unit);
+        return switch (unit) {
+            case DAYS -> TimeUnit.DAYS;
+            case HOURS -> TimeUnit.HOURS;
+            case MINUTES -> TimeUnit.MINUTES;
+            case SECONDS -> TimeUnit.SECONDS;
+            case MILLIS -> TimeUnit.MILLISECONDS;
+            case MICROS -> TimeUnit.MICROSECONDS;
+            case NANOS -> TimeUnit.NANOSECONDS;
+            default -> throw new IllegalArgumentException("unsupported: " + unit);
+        };
     }
 
     public OutType startAndGet(long timeout, ChronoUnit unit) {

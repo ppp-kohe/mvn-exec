@@ -190,11 +190,11 @@ public class MavenExecJava {
             if (!argsPart) {
                 if (arg.equals("-p") || arg.equals("--project")) {
                     ++i;
-                    projectPaths.add(0, new File(args[i]));
+                    projectPaths.addFirst(new File(args[i]));
                 } else if (arg.equals("-pr") || arg.equals("--projectReset")) {
                     ++i;
                     projectPaths.clear();
-                    projectPaths.add(0, new File(args[i]));
+                    projectPaths.addFirst(new File(args[i]));
                 } else if (arg.equals("-f") || arg.equals("--find")) {
                     modes.add(ExecMode.FindMainClass);
                 } else if (arg.equals("-l") || arg.equals("--list")) {
@@ -294,7 +294,7 @@ public class MavenExecJava {
         String ps = File.pathSeparator;
         String sep = File.separator;
 
-        String helpMessage = "" +
+        String helpMessage =
                 getClass().getName() + " [options] <mainClass> <arguments>...\n" +
                 "     <mainClass>        :  fully qualified name or sub-sequence of characters.\n" +
                 "                           In the latter case, \"Abc\" becomes the pattern \"A.*?[bB].*?[cC]\".\n" +
@@ -339,7 +339,7 @@ public class MavenExecJava {
         log("findMainClass pattern: %s", namePattern);
         int projectScale = (projectPaths.isEmpty() ? 0 : (int) Math.log10(projectPaths.size())) + 1;
         int scoreFactor = (int) Math.pow(10, projectScale);
-        log("projectScale: %d, scoreFactor: %d", projectScale, scoreFactor);
+        log("projectScale: %d, scoreFactor: %d", (Integer) projectScale, (Integer) scoreFactor);
 
         List<MainClassInfo> totalMains = new ArrayList<>();
         int i = 0;
@@ -349,7 +349,7 @@ public class MavenExecJava {
             int fi = projectPaths.size() - i;
             main = main.stream()
                     .map(m -> m.withScore(m.getScore() * scoreFactor + fi))
-                    .collect(Collectors.toList());
+                    .toList();
             totalMains.addAll(main);
             ++i;
         }
@@ -357,7 +357,7 @@ public class MavenExecJava {
                 Comparator.comparingInt(MainClassInfo::getScore)
                         .reversed());
         totalMains.forEach(m -> log("sorted %s", m));
-        return totalMains.isEmpty() ? null : totalMains.get(0);
+        return totalMains.isEmpty() ? null : totalMains.getFirst();
     }
 
     public static class MainClassInfo {

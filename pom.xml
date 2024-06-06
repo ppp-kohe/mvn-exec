@@ -6,7 +6,7 @@
 
     <groupId>org.autogui</groupId>
     <artifactId>mvn-exec</artifactId>
-    <version>1.10</version>
+    <version>1.11</version>
 
     <name>mvn-exec</name>
     <description>a command line wrapper for mvn exec:java</description>
@@ -21,17 +21,17 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.13.0</version>
                 <configuration>
-                    <release>17</release>
-                    <source>17</source>
-                    <target>17</target>
+                    <release>21</release>
+                    <source>21</source>
+                    <target>21</target>
                 </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.4.1</version>
                 <configuration>
                     <archive>
                         <manifest>
@@ -69,7 +69,7 @@
         <dependency>
             <groupId>org.ow2.asm</groupId>
             <artifactId>asm</artifactId>
-            <version>9.6</version>
+            <version>9.7</version>
         </dependency>
 
         <dependency>
