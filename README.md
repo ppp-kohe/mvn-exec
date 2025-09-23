@@ -4,7 +4,7 @@ This is a small utility for executing a main class in a Maven project with a sho
 
 ## Building and installation
 
-The project uses [apache-maven](http://maven.apache.org) and depends on Java 17 or later.
+The project uses [apache-maven](http://maven.apache.org) and depends on Java 25 or later.
 
 Add the script `mvn-exec` to your `PATH` and execute the script.
 The script will automatically compile the project with Maven.
@@ -99,7 +99,7 @@ Note: the utility currently does not support custom target directories other tha
 
 ### Class name completion
 
-The tool searches main classes of a target project thanks to [ASM](https://asm.ow2.io). 
+The tool searches main classes of a target project thanks to the JDK's java.lang.classfile package.
 
 You can specify a main class by a fully qualified name or a sub-sequence of characters.
 In the latter case, `Abc` becomes the pattern `A.*?[bB].*?[cC]`.
@@ -161,6 +161,6 @@ Note, the project is not registered on the Maven public repository. You need man
 <dependency>
   <groupId>org.autogui</groupId>
   <artifact>mvn-exec</artifact>
-  <version>1.7</version>
+  <version>2.0</version>
 </dependency>
 ```

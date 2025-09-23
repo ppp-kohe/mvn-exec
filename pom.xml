@@ -6,7 +6,7 @@
 
     <groupId>org.autogui</groupId>
     <artifactId>mvn-exec</artifactId>
-    <version>1.11</version>
+    <version>2.0</version>
 
     <name>mvn-exec</name>
     <description>a command line wrapper for mvn exec:java</description>
@@ -23,9 +23,9 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <release>21</release>
-                    <source>21</source>
-                    <target>21</target>
+                    <release>25</release>
+                    <source>25</source>
+                    <target>25</target>
                 </configuration>
             </plugin>
             <plugin>
@@ -66,12 +66,6 @@
     </build>
 
     <dependencies>
-        <dependency>
-            <groupId>org.ow2.asm</groupId>
-            <artifactId>asm</artifactId>
-            <version>9.7</version>
-        </dependency>
-
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

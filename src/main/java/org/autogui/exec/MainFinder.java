@@ -1,12 +1,10 @@
 package org.autogui.exec;
 
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-
 import java.io.IOException;
-import java.nio.file.Files;
+import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassModel;
+import java.lang.classfile.MethodModel;
+import java.lang.reflect.AccessFlag;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -15,10 +13,12 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainFinder extends ClassVisitor {
+public class MainFinder {
     protected Pattern namePattern;
     protected String className;
-    protected boolean hasMain;
+    protected boolean hasStaticMain;
+    protected boolean hasInstanceMain;
+    protected boolean hasDefaultConstructor;
     protected boolean nameMatched;
     protected int nameMatchedScore;
 
@@ -27,21 +27,41 @@ public class MainFinder extends ClassVisitor {
     }
 
     public MainFinder(Pattern namePattern) {
-        super(Opcodes.ASM9);
         this.namePattern = namePattern;
     }
 
     public String matchClass(Path classFile) throws IOException {
-        ClassReader r = new ClassReader(Files.newInputStream(classFile));
-        r.accept(this, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+        ClassModel model = ClassFile.of().parse(classFile);
+        processClass(model);
         if (this.hasMain() && this.isNameMatched()) {
             return this.getClassName();
         }
         return null;
     }
 
+    private void processClass(ClassModel cls) {
+        processClassName(cls.thisClass().asInternalName());
+
+        cls.elementStream()
+                .filter(MethodModel.class::isInstance)
+                .map(MethodModel.class::cast)
+                .forEach(this::processMethod);
+    }
+
     public boolean hasMain() {
-        return hasMain;
+        return hasStaticMain || (hasInstanceMain && hasDefaultConstructor);
+    }
+
+    public boolean hasStaticMain() {
+        return hasStaticMain;
+    }
+
+    public boolean hasInstanceMain() {
+        return hasInstanceMain;
+    }
+
+    public boolean hasDefaultConstructor() {
+        return hasDefaultConstructor;
     }
 
     public String getClassName() {
@@ -56,11 +76,11 @@ public class MainFinder extends ClassVisitor {
         return nameMatchedScore;
     }
 
-    @Override
-    public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
-        className = name.replace('/', '.');
+
+    public void processClassName(String internalName) {
+        className = internalName.replace('/', '.');
         if (this.namePattern != null) {
-            name = name.replace('$', '.')
+            internalName = internalName.replace('$', '.')
                         .replace('/', '.');
 
             /*
@@ -72,7 +92,7 @@ public class MainFinder extends ClassVisitor {
                 lastName = name.substring(dot + 1);
             }
             */
-            nameMatchedScore = match(name, namePattern);
+            nameMatchedScore = match(internalName, namePattern);
             nameMatched = nameMatchedScore > 0;
         } else {
             nameMatchedScore = 1;
@@ -235,13 +255,35 @@ public class MainFinder extends ClassVisitor {
         return Pattern.compile(buf.toString());
     }
 
-    @Override
-    public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-        if (name.equals("main") &&
-                ((access & Opcodes.ACC_STATIC) != 0) && ((access & Opcodes.ACC_PUBLIC) != 0) &&
-                descriptor.equals("([Ljava/lang/String;)V")) {
-            hasMain = true;
+    public void processMethod(MethodModel method) {
+        if (isDefaultConstructor(method)) {
+            hasDefaultConstructor = true;
+        } else if (method.methodName().stringValue().equals("main")) {
+            var flags = method.flags().flags();
+            if (!flags.contains(AccessFlag.PRIVATE) && isMainArg(method)) {
+                if (flags.contains(AccessFlag.STATIC)) {
+                    hasStaticMain = true;
+                } else {
+                    hasInstanceMain = true;
+                }
+            }
         }
-        return super.visitMethod(access, name, descriptor, signature, exceptions);
     }
+
+    private boolean isDefaultConstructor(MethodModel method) {
+        return method.methodName().stringValue().equals("<init>") && method.methodTypeSymbol().parameterCount() == 0;
+    }
+
+    private boolean isMainArg(MethodModel method) {
+        var desc = method.methodTypeSymbol();
+        if (desc.parameterCount() == 0) {
+            return true;
+        } else if (desc.parameterCount() == 1) {
+            var arg = desc.parameterType(0);
+            return arg.isArray() && arg.componentType().descriptorString().equals("Ljava/lang/String;");
+        } else {
+            return false;
+        }
+    }
+
 }

@@ -46,6 +46,7 @@ public class MavenExecJava {
         ListMainClass,
         GetCommand,
         Help,
+        Version,
     }
 
     public MavenExecJava() {
@@ -103,6 +104,10 @@ public class MavenExecJava {
                 }
                 case Help: {
                     help();
+                    break;
+                }
+                case Version: {
+                    version();
                     break;
                 }
             }
@@ -205,6 +210,9 @@ public class MavenExecJava {
                     modes.add(ExecMode.Execute);
                 } else if (arg.equals("-h") || arg.equals("--help")) {
                     modes.add(ExecMode.Help);
+                    break;
+                } else if (arg.equals("--version")) {
+                    modes.add(ExecMode.Version);
                     break;
                 } else if (arg.equals("-c") || arg.equals("--compile")) {
                     compile = true;
@@ -328,9 +336,30 @@ public class MavenExecJava {
                 "     -D<name>[=<value>] :  set a system-property to exec JVM. repeatable.\n" +
                 "     --debug            :  show debugging messages.\n" +
                 "     -X                 :  --debug and pass -X to mvn.\n" +
+                "     -h | --help        :  show help messages.\n" +
+                "     --version          :  show version info.\n" +
                 "     --mvn <mvnCommand> :  set the command name of maven. the default is \"mvn\" or \"mvn.cmd\" for Windows.\n" +
                 "     --                 :  indicate the start of mainClass and/or arguments.s\n";
         System.out.println(helpMessage);
+    }
+
+    public void version() {
+        ProcessShell<?> sh = ProcessShell.get(getMavenCommandVersion())
+                .setRedirectToInherit();
+        log("version", sh);
+        var mod = getClass().getModule();
+        String mvnExecVer = "";
+        if (mod != null) {
+            mvnExecVer = mod.getDescriptor().version()
+                    .map(Objects::toString)
+                    .orElse("");
+        }
+        System.out.printf("mvn-exec %s: java.version=%s, java.class.version=%s, java.home=%s%n",
+                mvnExecVer,
+                System.getProperty("java.version"),
+                System.getProperty("java.class.version"),
+                System.getProperty("java.home"));
+        System.out.println(sh.runToString());
     }
 
     public MainClassInfo findMainClassFromProjects(String name) {
@@ -535,6 +564,13 @@ public class MavenExecJava {
             }
         }
         return mvnCommand;
+    }
+
+    public List<String> getMavenCommandVersion() {
+        List<String> command = new ArrayList<>();
+        command.add(getMavenCommandName());
+        command.add("--version");
+        return command;
     }
 
     public List<String> getMavenCommandExec(String mainClass, List<String> args) {
