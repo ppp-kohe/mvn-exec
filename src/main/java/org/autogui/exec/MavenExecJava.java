@@ -21,6 +21,7 @@ public class MavenExecJava {
 
     protected List<File> projectPaths = new ArrayList<>();
     protected String mainClass = null;
+    protected String javaExecutable = "java";
     protected List<String> arguments = new ArrayList<>();
     protected List<Map.Entry<String,String>> propertySettings = new ArrayList<>();
     protected LinkedHashSet<ExecMode> modes = new LinkedHashSet<>();
@@ -222,6 +223,9 @@ public class MavenExecJava {
                     completeWorkingDirectory = false;
                 } else if (arg.equals("--complete")) {
                     completeWorkingDirectory = true;
+                } else if (arg.equals("--java")) {
+                    ++i;
+                    javaExecutable = args[i];
                 } else if (arg.equals("-w") || arg.equals("--logWarn")) {
                     logLevel = "warn";
                 } else if (arg.equals("--logOff")) {
@@ -313,6 +317,7 @@ public class MavenExecJava {
                 "     -g  | --get        :  show the command line.\n" +
                 "     -r  | --run        :  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
                 "     -c  | --compile    :  \"mvn compile\" before execution.\n" +
+                "     --java <javaExec>  :  specify the java command name or JDK Home for exec. the default is \"java\".\n" +
                 "     --execJava         :  use \"exec:java\" instead of \"exec:exec\". it enables completion of relative path.\n" +
                 "     -sac| --suppressAutoCompile :  suppress checking target directory and executing \"mvn compile\".\n" +
                 "     --complete                  :  turn on completion of relative path for arguments.\n" +
@@ -579,10 +584,28 @@ public class MavenExecJava {
         command.addAll(mvnOptions);
         command.add("exec:exec");
         command.add("-Dexec.classpathScope=test");
-        command.add("-Dexec.executable=java");
+        command.add("-Dexec.executable=" + getMavenCommandExecJavaExecutable());
         command.add("-Dexec.workingdir=" + new File(".").getAbsolutePath());
         command.add("-Dexec.args=" + getCommandArgumentsForExec(mainClass, args));
         return command;
+    }
+
+    private String getMavenCommandExecJavaExecutable() {
+        var file = new File(javaExecutable);
+        if (file.isFile()) {
+            return javaExecutable;
+        } else if (file.isDirectory()) {
+            var binJava = new File(file, "bin" + File.separator + "java");
+            if (binJava.exists()) {
+                return binJava.getPath();
+            } else {
+                var exeJava = new File(file, "bin" + File.separator + "java.exe"); //Windows
+                if (exeJava.exists()) {
+                    return exeJava.getPath();
+                }
+            }
+        }
+        return javaExecutable;
     }
 
     public String getCommandArgumentsForExec(String mainClass, List<String> args) {
