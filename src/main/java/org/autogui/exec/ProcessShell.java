@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 /**
  * A wrapper for creating and executing a {@link Process}.
@@ -73,6 +74,8 @@ public class ProcessShell<OutType> {
     protected List<Thread> executedThreads = Collections.synchronizedList(new ArrayList<>());
     protected List<CompletableFuture<?>> executedThreadsWaits = Collections.synchronizedList(new ArrayList<>());
 
+    protected EchoQuote quote = EchoQuoteDefault.Nothing;
+
     protected boolean waitThreads = true;
 
     public static ProcessShell<?> get(String... command) {
@@ -124,8 +127,56 @@ public class ProcessShell<OutType> {
         return this;
     }
 
+    public ProcessShell<OutType> setEchoQuote(EchoQuote quote) {
+        this.quote = quote;
+        return this;
+    }
+
     public String getEchoString() {
-        return String.join(" ", builder.command());
+        return quote.join(builder.command());
+    }
+
+    public static final Pattern patternSpace = Pattern.compile("\\s");
+    public static final Pattern patternSingleQuote = Pattern.compile("'");
+    public static final Pattern patternSingleQuoteWithSmart = Pattern.compile("['‘’]");
+
+    public interface EchoQuote {
+        default String join(List<String> args) {
+            return String.join(" ", args.stream()
+                    .map(this::quote)
+                    .toList());
+        }
+        String quote(String arg);
+    }
+
+    public enum EchoQuoteDefault implements EchoQuote {
+        Nothing {
+            @Override
+            public String quote(String arg) {
+                return arg;
+            }
+        },
+        UnixShell {
+            @Override
+            public String quote(String arg) {
+                if (patternSpace.matcher(arg).find()) {
+                    return "'" + patternSingleQuote.matcher(arg).replaceAll("'\\''") + "'";
+                } else {
+                    return arg;
+                }
+            }
+        },
+        PowerShell {
+            @Override
+            public String quote(String arg) {
+                if (patternSpace.matcher(arg).find()) {
+                    return "'" + patternSingleQuoteWithSmart.matcher(arg)
+                            .replaceAll(m -> m.group() + m.group()) + "'";
+                } else {
+                    return arg;
+                }
+            }
+        }
     }
 
     public String getEchoString(String before, String after) {

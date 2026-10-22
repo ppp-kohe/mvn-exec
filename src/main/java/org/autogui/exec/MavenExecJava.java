@@ -40,11 +40,15 @@ public class MavenExecJava {
     protected boolean execExec = true;
     protected String mvnCommand;
 
+    protected ProcessShell.EchoQuote quote = ProcessShell.EchoQuoteDefault.UnixShell;
+
     public enum ExecMode {
         Execute,
         ExecuteDefault,
         FindMainClass,
+        FindProject,
         ListMainClass,
+        ListMainClassWithProject,
         GetCommand,
         Help,
         Version,
@@ -75,6 +79,7 @@ public class MavenExecJava {
         }
 
         checkProjectsPom();
+        checkEchoQuote();
 
         if (compile) {
             compileProjects();
@@ -99,8 +104,16 @@ public class MavenExecJava {
                     executeFindMainClass();
                     break;
                 }
+                case FindProject: {
+                    executeFindProject();
+                    break;
+                }
                 case ListMainClass: {
                     executeListMainClass();
+                    break;
+                }
+                case ListMainClassWithProject: {
+                    executeListMainClassWithProject();
                     break;
                 }
                 case Help: {
@@ -122,6 +135,24 @@ public class MavenExecJava {
                 !new File(path, "pom.xml").isFile());
         if (projectPaths.isEmpty()) {
             throw new RuntimeException("no pom.xml in " + projectPaths);
+        }
+    }
+
+    public void checkEchoQuote() {
+        log("check echo-quote for getting command");
+        quote = echoQuoteFromParentProcess();
+    }
+
+    public static ProcessShell.EchoQuote echoQuoteFromParentProcess() {
+        var parent = ProcessHandle.current().parent();
+        var parentCommand = parent.map(p ->
+                        p.info().command().orElse(""))
+                .orElse("");
+        if (parentCommand.endsWith("powershell.exe") || parentCommand.endsWith("pwsh.exe") ||
+                parentCommand.endsWith("cmd.exe")) { //cmd.exe appears if it runs .bat in powershell
+            return ProcessShell.EchoQuoteDefault.PowerShell;
+        } else {
+            return ProcessShell.EchoQuoteDefault.UnixShell;
         }
     }
 
@@ -178,6 +209,16 @@ public class MavenExecJava {
         }
     }
 
+    public void executeFindProject() {
+        if (mainClass != null) {
+            MainClassInfo main = findMainClassFromProjects(mainClass);
+            if (main == null) {
+                throw new NoSuchMainClassException(mainClass);
+            }
+            System.out.println(main.getPath().toString());
+        }
+    }
+
     public static class NoSuchMainClassException extends RuntimeException {
         public NoSuchMainClassException(String mainClass) {
             super("not-found: " + mainClass);
@@ -185,9 +226,12 @@ public class MavenExecJava {
     }
 
     public void executeListMainClass() {
-        listMainClassesFromProjects();
+        listMainClassesFromProjects(false);
     }
 
+    public void executeListMainClassWithProject() {
+        listMainClassesFromProjects(true);
+    }
 
     public void parseArgs(String... args) {
         boolean argsPart = false;
@@ -203,8 +247,12 @@ public class MavenExecJava {
                     projectPaths.addFirst(new File(args[i]));
                 } else if (arg.equals("-f") || arg.equals("--find")) {
                     modes.add(ExecMode.FindMainClass);
+                } else if (arg.equals("-fp") || arg.equals("--findProject")) {
+                    modes.add(ExecMode.FindProject);
                 } else if (arg.equals("-l") || arg.equals("--list")) {
                     modes.add(ExecMode.ListMainClass);
+                } else if (arg.equals("-lp") || arg.equals("--listProject")) {
+                    modes.add(ExecMode.ListMainClassWithProject);
                 } else if (arg.equals("-g") || arg.equals("--get")) {
                     modes.add(ExecMode.GetCommand);
                 } else if (arg.equals("-r") || arg.equals("--run")) {
@@ -313,7 +361,9 @@ public class MavenExecJava {
                 "     -p  | --project <path>      :  add a maven project directory. repeatable. later items have high precedence.\n" +
                 "     -pr | --projectReset <path> :  clear existing project directories and add a directory.\n" +
                 "     -f  | --find       :  show the matched main-class name.\n" +
+                "     -fp | --findProject:  show the project containing the matched main-class.\n" +
                 "     -l  | --list       :  show list of main-classes.\n" +
+                "     -lp | --listProject:  show list of main-classes with project-path joined by tab.\n" +
                 "     -g  | --get        :  show the command line.\n" +
                 "     -r  | --run        :  execute the command line. automatically set (with showing the command line) if no -f,-l or -g.\n" +
                 "     -c  | --compile    :  \"mvn compile\" before execution.\n" +
@@ -435,35 +485,41 @@ public class MavenExecJava {
         }
     }
 
-    public void listMainClassesFromProjects() {
-        projectPaths.forEach(this::listMainClasses);
+    public void listMainClassesFromProjects(boolean withProject) {
+        projectPaths.forEach(p -> listMainClasses(p, withProject));
     }
 
-    public void listMainClasses(File projectPath) {
-        for (File dir : getClassesDirectories(projectPath)) {
-            if (dir.isDirectory()) {
-                try (Stream<Path> paths = findClassFromClassesDir(dir)) {
-                    paths.map(p -> matchClass(p, null))
-                            .filter(Objects::nonNull)
-                            .map(MainClassInfo::getName)
-                            .forEach(System.out::println);
-                } catch (Exception ex) {
-                    throw new RuntimeException(ex);
+    public void listMainClasses(File projectPath, boolean withProject) {
+        for (ProjectClassDirs dirs : getClassesDirectories(projectPath)) {
+            for (File dir : dirs.classDirs()) {
+                if (dir.isDirectory()) {
+                    try (Stream<Path> paths = findClassFromClassesDir(dir)) {
+                        paths.map(p -> matchClass(p, null))
+                                .filter(Objects::nonNull)
+                                .map(m -> withProject ?
+                                        String.join("\t", m.getName(), dirs.projectDir().getPath()) :
+                                        m.getName())
+                                .forEach(System.out::println);
+                    } catch (Exception ex) {
+                        throw new RuntimeException(ex);
+                    }
                 }
             }
         }
     }
 
     public List<MainClassInfo> findMainClass(File projectDir, Pattern namePattern) {
-        return getClassesDirectories(projectDir).stream()
-                .filter(File::isDirectory)
-                .map(dir -> findMainClassFromClassesDir(dir, namePattern))
-                .flatMap(l -> l.stream()
-                            .map(main -> main.withPath(projectDir)))
-                .collect(Collectors.toList());
+        var clsDirs = getClassesDirectories(projectDir);
+        return clsDirs.stream()
+                .flatMap(dirs -> findMainClasses(dirs, namePattern).stream())
+                .toList();
     }
 
-    public List<File> getClassesDirectories(File projectDir) {
+    public List<ProjectClassDirs> getClassesDirectories(File projectDir) {
+        return getClassesDirectories(projectDir, true);
+    }
+
+    public List<ProjectClassDirs> getClassesDirectories(File projectDir, boolean recursive) {
         boolean canHaveTarget = !projectMayHaveNoTarget(projectDir);
         File targetDir = new File(projectDir, "target");
 
@@ -475,7 +531,24 @@ public class MavenExecJava {
         }
         File classesDir = new File(targetDir, "classes");
         File testClassesDir = new File(targetDir, "test-classes");
-        return Arrays.asList(classesDir, testClassesDir);
+        var list = new ArrayList<>(List.of(new ProjectClassDirs(projectDir, List.of(classesDir, testClassesDir))));
+        if (recursive && !canHaveTarget) {
+            try (var items = Files.list(projectDir.toPath())) {
+                items.filter(this::isMavenProjectDir)
+                        .flatMap(f -> getClassesDirectories(f.toFile(), false).stream())
+                        .forEach(list::add);
+            } catch (IOException ex) {
+                log("error listing %s : %s", projectDir, ex);
+            }
+        }
+        return list;
+    }
+
+    public record ProjectClassDirs(File projectDir, List<File> classDirs) {}
+
+    protected boolean isMavenProjectDir(Path path) {
+        return Files.isDirectory(path) &&
+            Files.isRegularFile(path.resolve("pom.xml"));
     }
 
     public boolean projectMayHaveNoTarget(File projectDir) {
@@ -486,7 +559,7 @@ public class MavenExecJava {
         try {
             for (String line : Files.readAllLines(pomFile.toPath())) {
                 //quick checking
-                if (line.contains("<packaging>pom</packaging>")) { //aggregation of sub-modules
+                if (line.contains("<packaging>pom</packaging>")) { //aggregation of submodules
                     log("project have <packaging>pom</packaging>");
                     return true;
                 }
@@ -511,6 +584,14 @@ public class MavenExecJava {
                 })
                 .setRedirectToInherit()
                 .echo().runToReturnCode();
+    }
+
+    public List<MainClassInfo> findMainClasses(ProjectClassDirs dirs, Pattern namePattern) {
+        return dirs.classDirs().stream()
+                .filter(File::isDirectory)
+                .flatMap(dir -> findMainClassFromClassesDir(dir, namePattern).stream())
+                .map(main -> main.withPath(dirs.projectDir()))
+                .toList();
     }
 
     public List<MainClassInfo> findMainClassFromClassesDir(File classesDir, Pattern namePattern) {
@@ -557,6 +638,7 @@ public class MavenExecJava {
                         p.environment().put("MAVEN_EXEC_DEBUG_INIT_TIME", commandCreationTime.toString());
                     }
                 })
+                .setEchoQuote(quote)
                 .setRedirectToInherit();
     }
 
@@ -618,32 +700,17 @@ public class MavenExecJava {
         } catch (Exception ex) {
             log("version error: java.version=%s : %s", System.getProperty("java.version"), ex);
         }
-        String jvmOpts = jvmOptions.stream()
-                .map(this::getCommandArgumentWithoutCompletion)
-                .collect(Collectors.joining(" "));
+        String jvmOpts = quote.join(jvmOptions);
 
-        String propOpts = propertySettings.stream()
-                .map(this::getPropertySetting)
-                .map(this::getCommandArgumentWithoutCompletion)
-                .collect(Collectors.joining(" "));
+        String propOpts = quote.join(propertySettings.stream()
+                        .map(this::getPropertySetting)
+                        .toList());
 
-        String argStr = args.stream()
-                .map(this::getCommandArgumentWithoutCompletion)
-                .collect(Collectors.joining(" "));
-        return String.join(" ", jvmOpts, propOpts, cp, mp, mainClass, argStr);
-    }
-
-    static Pattern spaces = Pattern.compile("\\s");
-
-    public String getCommandArgumentWithoutCompletion(String arg) {
-        if (spaces.matcher(arg).find()) {
-            if (!arg.contains("'")) {
-                return "'" + arg + "'";
-            } else {
-                return "\"" + arg + "\""; //TODO escape
-            }
+        String argStr = quote.join(args);
+        if (argStr.isEmpty()) {
+            return String.join(" ", jvmOpts, propOpts, cp, mp, mainClass);
         } else {
-            return arg;
+            return String.join(" ", jvmOpts, propOpts, cp, mp, mainClass, argStr);
         }
     }
 

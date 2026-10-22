@@ -56,13 +56,27 @@ There are several options for changing the behavior of the utility.
   my.pack.MyMainClass
 ```
 
+* `-fp` can find the specified class-name and show the project-path containing the class.
+
+```bash
+  % mvn-exec -p path/to/my-maven-project MyMainClass -f
+  path/to/my-maven-project 
+```
+
 * `-l` can list executable main classes in your project
 
 ```bash
   % mvn-exec -p path/to/my-maven-project -l
   my.pack.MyMainClass
   ...
+```
 
+* `-lp` can list executable main classes with project-paths in your project
+
+```bash
+  % mvn-exec -p path/to/my-maven-project -lp
+  my.pack.MyMainClass	path/to/my-maven-project
+  ...
 ```
 
 * `--` can explicitly split options for `mvn-exec` and program arguments
@@ -161,6 +175,6 @@ Note, the project is not registered on the Maven public repository. You need man
 <dependency>
   <groupId>org.autogui</groupId>
   <artifact>mvn-exec</artifact>
-  <version>2.0</version>
+  <version>2.2</version>
 </dependency>
 ```
