@@ -29,6 +29,8 @@ public class MavenExecJava {
     protected boolean completeWorkingDirectory = false;
     protected boolean autoCompile = true;
     protected String logLevel = "error";
+    protected boolean useClasspath;
+    protected boolean useModulepath;
 
     protected boolean debug;
 
@@ -179,7 +181,7 @@ public class MavenExecJava {
             if (main == null) {
                 throw new NoSuchMainClassException(mainClass);
             }
-            ProcessShell<?> sh = getCommand(main.getPath(), main.getName(), arguments);
+            ProcessShell<?> sh = getCommand(main.getPath(), main.getModuleName(), main.getName(), arguments);
             log("command %s", sh);
             if (def) {
                 sh.echo();
@@ -194,7 +196,7 @@ public class MavenExecJava {
             if (main == null) {
                 throw new NoSuchMainClassException(mainClass);
             }
-            ProcessShell<?> sh = getCommand(main.getPath(), main.getName(), arguments);
+            ProcessShell<?> sh = getCommand(main.getPath(), main.getModuleName(), main.getName(), arguments);
             System.out.println(sh.getEchoString());
         }
     }
@@ -205,8 +207,12 @@ public class MavenExecJava {
             if (main == null) {
                 throw new NoSuchMainClassException(mainClass);
             }
-            System.out.println(main.getName());
+            System.out.println(getMainName(useModulepath, main.getModuleName(), main.getName()));
         }
+    }
+
+    public String getMainName(boolean useModuleName, String moduleName, String mainName) {
+        return useModuleName && moduleName != null ? (moduleName + "/" + mainName) : mainName;
     }
 
     public void executeFindProject() {
@@ -290,6 +296,10 @@ public class MavenExecJava {
                     mvnOptions.add("-X");
                     logLevel = "warn";
                     setDebug();
+                } else if (arg.equals("-uc") || arg.equals("--useClasspath")) {
+                    useClasspath = true;
+                } else if (arg.equals("-um") || arg.equals("--useModulepath")) {
+                    useModulepath = true;
                 } else if (arg.equals("--execJava")) {
                     execExec = false;
                     completeWorkingDirectory = true;
@@ -383,10 +393,13 @@ public class MavenExecJava {
                 "               Note: \"mvn exec:java\" cannot change the working directory other than the target project dir.\n" +
                 "                   Thus, we need to provide the absolute path for an outer path of the project\n" +
                 "                    as arguments for the executed program. \n" +
+                "     -uc | --useClasspath  : use -cp %classpath for execution (default).\n" +
+                "     -um | --useModulepath : use -p %modulepath for execution. If it specified, no -cp options unless -uc specified.\n" +
+                "                               Also, -m mod/pack.Cls for specifying the main-class.\n" +
                 "     -w  | --logWarn    :  set the log-level to \"warn\", meaning \"-Dorg.slf4j.simpleLogger.defaultLogLevel=warn\" instead of \"error\". \n" +
                 "     -e                 :  -w and pass -e to maven to show errors.\n" +
                 "     -J<opt>            :  pass opt to JVM. e.g. -J-Xmx10g \n" +
-                "     -M<opt>            :  pass opt to Maven. " +
+                "     -M<opt>            :  pass opt to Maven. \n" +
                 "     --logOff           :  set the log-level to \"off\".\n" +
                 "     -D<name>[=<value>] :  set a system-property to exec JVM. repeatable.\n" +
                 "     --debug            :  show debugging messages.\n" +
@@ -446,17 +459,23 @@ public class MavenExecJava {
 
     public static class MainClassInfo {
         protected File path;
+        protected String moduleName;
         protected String name;
         protected int score;
 
-        public MainClassInfo(File path, String name, int score) {
+        public MainClassInfo(File path, String moduleName, String name, int score) {
             this.path = path;
+            this.moduleName = moduleName;
             this.name = name;
             this.score = score;
         }
 
         public File getPath() {
             return path;
+        }
+
+        public String getModuleName() {
+            return moduleName;
         }
 
         public String getName() {
@@ -468,17 +487,18 @@ public class MavenExecJava {
         }
 
         public MainClassInfo withPath(File path) {
-            return new MainClassInfo(path, name, score);
+            return new MainClassInfo(path, moduleName, name, score);
         }
 
         public MainClassInfo withScore(int score) {
-            return new MainClassInfo(path, name, score);
+            return new MainClassInfo(path, moduleName, name, score);
         }
 
         @Override
         public String toString() {
             return "MainClassInfo{" +
                     "path=" + path +
+                    ", module=" + (moduleName == null ? "null" : ('\'' +  moduleName + '\'')) +
                     ", name='" + name + '\'' +
                     ", score=" + score +
                     '}';
@@ -492,13 +512,14 @@ public class MavenExecJava {
     public void listMainClasses(File projectPath, boolean withProject) {
         for (ProjectClassDirs dirs : getClassesDirectories(projectPath)) {
             for (File dir : dirs.classDirs()) {
+                var packageToModules = findPackageToModulesFromClassesDir(dir);
                 if (dir.isDirectory()) {
                     try (Stream<Path> paths = findClassFromClassesDir(dir)) {
-                        paths.map(p -> matchClass(p, null))
+                        paths.map(p -> matchClass(p, null, packageToModules))
                                 .filter(Objects::nonNull)
                                 .map(m -> withProject ?
-                                        String.join("\t", m.getName(), dirs.projectDir().getPath()) :
-                                        m.getName())
+                                        String.join("\t", getMainName(useModulepath, m.getModuleName(), m.getName()), dirs.projectDir().getPath()) :
+                                        getMainName(useModulepath, m.getModuleName(), m.getName()))
                                 .forEach(System.out::println);
                     } catch (Exception ex) {
                         throw new RuntimeException(ex);
@@ -574,7 +595,7 @@ public class MavenExecJava {
 
     public void compileProject(File projectDir) {
         List<String> command = new ArrayList<>();
-        command.add(getMavenCommandName());
+        command.add(getMavenCommandName(projectDir));
         command.addAll(mvnOptions);
         command.add("compile");
         ProcessShell.get(command)
@@ -595,12 +616,47 @@ public class MavenExecJava {
     }
 
     public List<MainClassInfo> findMainClassFromClassesDir(File classesDir, Pattern namePattern) {
+        var packageToModules = findPackageToModulesFromClassesDir(classesDir);
         try (Stream<Path> paths = findClassFromClassesDir(classesDir)) {
-            return paths.map(p -> matchClass(p, namePattern))
+            return paths.map(p -> matchClass(p, namePattern, packageToModules))
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
         } catch (Exception ex) {
             throw new RuntimeException(ex);
+        }
+    }
+
+    public Map<String, String> findPackageToModulesFromClassesDir(File classesDir) {
+        Map<String, String> packageToModules = new HashMap<>();
+        try (Stream<Path> paths = findModuleInfoClassFromClassesDir(classesDir)) {
+            paths.map(p -> {
+                        try {
+                            var m = new ModulePackageFinder();
+                            if (m.process(p)) {
+                                return m;
+                            } else {
+                                return null;
+                            }
+                        } catch (IOException ioe) {
+                            throw new RuntimeException(ioe);
+                        }
+                    }).filter(Objects::nonNull)
+                    .forEach(m ->
+                        m.getExports().forEach(p -> packageToModules.put(p, m.getName())));
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+        log("findPackageToModulesFromClassesDir(%s) -> %s", classesDir, packageToModules);
+        return packageToModules;
+    }
+
+    public Stream<Path> findModuleInfoClassFromClassesDir(File classesDir) throws IOException {
+        if (!classesDir.isDirectory()) {
+            return Stream.of();
+        } else {
+            return Files.walk(classesDir.toPath())
+                    .filter(Files::isRegularFile)
+                    .filter(f -> f.getFileName().toString().equals("module-info.class"));
         }
     }
 
@@ -610,12 +666,17 @@ public class MavenExecJava {
                 .filter(p -> p.getFileName().toString().endsWith(".class"));
     }
 
-    public MainClassInfo matchClass(Path classFile, Pattern namePattern) {
+    public MainClassInfo matchClass(Path classFile, Pattern namePattern, Map<String, String> packageToModules) {
         try {
             MainFinder finder = new MainFinder(namePattern);
             String name = finder.matchClass(classFile);
             if (name != null) {
-                return new MainClassInfo(classFile.toFile(), name, finder.getNameMatchedScore());
+                String moduleName = null;
+                int i = name.lastIndexOf('.');
+                if (i != -1) {
+                    moduleName = packageToModules.get(name.substring(0, i));
+                }
+                return new MainClassInfo(classFile.toFile(), moduleName, name, finder.getNameMatchedScore());
             } else {
                 return null;
             }
@@ -626,9 +687,11 @@ public class MavenExecJava {
         }
     }
 
-    public ProcessShell<?> getCommand(File projectPath, String mainClass, List<String> args) {
+    public ProcessShell<?> getCommand(File projectPath, String moduleName, String mainClass, List<String> args) {
         Instant commandCreationTime = Instant.now();
-        return ProcessShell.get(execExec ? getMavenCommandExec(mainClass, args) : getMavenCommandExecJava(mainClass, args))
+        return ProcessShell.get(execExec ?
+                        getMavenCommandExec(projectPath, moduleName, mainClass, args) :
+                        getMavenCommandExecJava(projectPath, moduleName, mainClass, args))
                 .set(p -> {
                     p.directory(projectPath);
                     String mavenOpts = getMavenOpts();
@@ -642,11 +705,17 @@ public class MavenExecJava {
                 .setRedirectToInherit();
     }
 
-    public String getMavenCommandName() {
+    public String getMavenCommandName(File projectDir) {
         if (mvnCommand == null) {
             if (System.getProperty("os.name", "").contains("Windows")) {
+                if (projectDir != null && new File(projectDir, "mvnw.cmd").isFile()) {
+                    return new File(".", "mvnw.cmd").getPath();
+                }
                 mvnCommand = "mvn.cmd";
             } else {
+                if (projectDir != null && new File(projectDir, "mvnw").isFile()) {
+                    return new File(".", "mvnw").getPath();
+                }
                 mvnCommand = "mvn";
             }
         }
@@ -655,20 +724,20 @@ public class MavenExecJava {
 
     public List<String> getMavenCommandVersion() {
         List<String> command = new ArrayList<>();
-        command.add(getMavenCommandName());
+        command.add(getMavenCommandName(null));
         command.add("--version");
         return command;
     }
 
-    public List<String> getMavenCommandExec(String mainClass, List<String> args) {
+    public List<String> getMavenCommandExec(File projectPath, String moduleName, String mainClass, List<String> args) {
         List<String> command = new ArrayList<>();
-        command.add(getMavenCommandName());
+        command.add(getMavenCommandName(projectPath));
         command.addAll(mvnOptions);
         command.add("exec:exec");
         command.add("-Dexec.classpathScope=test");
         command.add("-Dexec.executable=" + getMavenCommandExecJavaExecutable());
         command.add("-Dexec.workingdir=" + new File(".").getAbsolutePath());
-        command.add("-Dexec.args=" + getCommandArgumentsForExec(mainClass, args));
+        command.add("-Dexec.args=" + getCommandArgumentsForExec(moduleName, mainClass, args));
         return command;
     }
 
@@ -690,7 +759,26 @@ public class MavenExecJava {
         return javaExecutable;
     }
 
-    public String getCommandArgumentsForExec(String mainClass, List<String> args) {
+    public String getCommandArgumentsForExec(String moduleName, String mainClass, List<String> args) {
+        String jvmOpts = quote.join(jvmOptions);
+
+        String propOpts = quote.join(propertySettings.stream()
+                        .map(this::getPropertySetting)
+                        .toList());
+
+        String codePath = getCodePathArgumentForExec();
+        String argStr = quote.join(args);
+        if (useModulepath && moduleName != null) {
+            mainClass = "-m " + getMainName(true, moduleName, mainClass);
+        }
+        if (argStr.isEmpty()) {
+            return String.join(" ", jvmOpts, propOpts, codePath, mainClass);
+        } else {
+            return String.join(" ", jvmOpts, propOpts, codePath, mainClass, argStr);
+        }
+    }
+
+    public String getCodePathArgumentForExec() {
         String cp = "-cp %classpath"; //-cp %classpath
         String mp = "-p %modulepath"; //-p %modulepath
         try {
@@ -700,27 +788,26 @@ public class MavenExecJava {
         } catch (Exception ex) {
             log("version error: java.version=%s : %s", System.getProperty("java.version"), ex);
         }
-        String jvmOpts = quote.join(jvmOptions);
-
-        String propOpts = quote.join(propertySettings.stream()
-                        .map(this::getPropertySetting)
-                        .toList());
-
-        String argStr = quote.join(args);
-        if (argStr.isEmpty()) {
-            return String.join(" ", jvmOpts, propOpts, cp, mp, mainClass);
-        } else {
-            return String.join(" ", jvmOpts, propOpts, cp, mp, mainClass, argStr);
+        List<String> codePath = new ArrayList<>(2);
+        if (useClasspath) {
+            codePath.add(cp);
         }
+        if (useModulepath) {
+            codePath.add(mp);
+        }
+        if (!useClasspath && !useModulepath) {
+            codePath.add(cp);
+        }
+        return String.join(" ", codePath);
     }
 
-    public List<String> getMavenCommandExecJava(String mainClass, List<String> args) {
+    public List<String> getMavenCommandExecJava(File projectDir, String moduleName, String mainClass, List<String> args) {
         List<String> command = new ArrayList<>();
-        command.add(getMavenCommandName());
+        command.add(getMavenCommandName(projectDir));
         command.addAll(mvnOptions);
         command.add("exec:java");
         command.add("-Dexec.classpathScope=test");
-        command.add("-Dexec.mainClass=" + mainClass);
+        command.add("-Dexec.mainClass=" + getMainName(useModulepath, moduleName, mainClass));
         command.add("-Dexec.args=" + getCommandArgumentList(args));
         propertySettings.stream()
                 .map(this::getPropertySetting)

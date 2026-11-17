@@ -12,7 +12,7 @@ The script will automatically compile the project with Maven.
 You can also build and execute the utility by the following steps:
 
 ```bash
-mvn package dependency:copy-dependencies -DoutputDirectory=target/mods
+./mvnw package dependency:copy-dependencies -DoutputDirectory=target/mods
 cp targert/mvn-exec-*.jar target/mods
 
 java -p target/mods -m org.autogui.mvn_exec
@@ -35,7 +35,7 @@ The script launch the class via the following command line:
   > mvn exec:exec -Dexec.classpathScope=test \
      -Dexec.executable=java \
      -Dexec.workingdir=your/current/path/. \
-     -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass arg1 arg2 arg3"
+     -Dexec.args="-cp %classpath my.pack.MyMainClass arg1 arg2 arg3"
 ```
 
 The utility relies on [exec-maven-plugin](https://www.mojohaus.org/exec-maven-plugin/) for launching a class.
@@ -46,7 +46,7 @@ There are several options for changing the behavior of the utility.
 
 ```bash
   % mvn-exec -p path/to/my-maven-project -g MyMainClass 
-  mvn exec:exec -Dexec.classpathScope=test -Dexec.executable=java -Dexec.workingdir=your/current/path/. -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass"
+  mvn exec:exec -Dexec.classpathScope=test -Dexec.executable=java -Dexec.workingdir=your/current/path/. -Dexec.args="-cp %classpath my.pack.MyMainClass"
 ```
 
 * `-f` can find the specified class-name and show the qualified name
@@ -86,10 +86,19 @@ There are several options for changing the behavior of the utility.
   > mvn exec:exec -Dexec.classpathScope=test \
      -Dexec.executable=java \
      -Dexec.workingdir=your/current/path/. \
-     -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass -f -l -p"
+     -Dexec.args="-cp %classpath my.pack.MyMainClass -f -l -p"
 ```
 
 * Also, `-r` can launch command line same as regular execution other than not showing the `> mvn exec:exec ...` line to the standard error.
+
+* For a module aware project containing `module-info.java`, the option `-um` can switch to using `-p %modulepath -m <module>/<mainClass>`, from using class-paths.
+
+```bash
+  % mvn-exec -p path/to/my-maven-project -um MyMainClass 
+  mvn exec:exec -Dexec.classpathScope=test -Dexec.executable=java -Dexec.workingdir=your/current/path/. -Dexec.args="-p %modulepath -m  my.mod/my.pack.MyMainClass"
+```
+
+* If the target project contains wrapper scripts `mvnw` or `mvnw.cmd` (in Windows), it uses the script.
 
 ### Compiling the target project before execution
 
@@ -101,7 +110,7 @@ There are several options for changing the behavior of the utility.
   > mvn exec:exec -Dexec.classpathScope=test \
     -Dexec.executable=java \
     -Dexec.workingdir=your/current/path/. \
-    -Dexec.args="-cp %classpath -p %modulepath my.pack.MyMainClass arg1 arg2 arg3"
+    -Dexec.args="-cp %classpath my.pack.MyMainClass arg1 arg2 arg3"
 ```
 
 If the project directory does not have `target/classes` sub-directory, 
@@ -175,6 +184,6 @@ Note, the project is not registered on the Maven public repository. You need man
 <dependency>
   <groupId>org.autogui</groupId>
   <artifact>mvn-exec</artifact>
-  <version>2.2</version>
+  <version>2.3</version>
 </dependency>
 ```
